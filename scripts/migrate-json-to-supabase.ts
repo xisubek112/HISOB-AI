@@ -174,6 +174,37 @@ function buildDataRows(data: JsonRecord): JsonRecord[] {
   return rows;
 }
 
+function validateRelations(users: JsonRecord[], sessions: JsonRecord[], records: JsonRecord[]): void {
+  const userIds = new Set(users.map((user) => String(user.id)));
+  const emails = new Set<string>();
+
+  for (const user of users) {
+    const normalized = String(user.email).trim().toLowerCase();
+    if (emails.has(normalized)) {
+      throw new Error('Duplicate normalized email in legacy users; import stopped before writing');
+    }
+    emails.add(normalized);
+  }
+
+  for (const session of sessions) {
+    if (!userIds.has(String(session.user_id))) {
+      throw new Error('A legacy session references a missing user; import stopped before writing');
+    }
+  }
+
+  for (const record of records) {
+    if (!userIds.has(String(record.owner_user_id))) {
+      throw new Error('A legacy data record references a missing owner; import stopped before writing');
+    }
+    // Ensure each payload can be serialized before the first network write.
+    try {
+      JSON.stringify(record.payload);
+    } catch {
+      throw new Error('A legacy data record contains a non-serializable payload');
+    }
+  }
+}
+
 async function main() {
   if (apply && !process.argv.includes('--confirm-hisobot-import')) {
     throw new Error('Write mode requires both --apply and --confirm-hisobot-import');
@@ -187,6 +218,7 @@ async function main() {
   const users = buildUserRows(legacy.users ?? {});
   const sessions = buildSessionRows(legacy.sessions ?? {});
   const records = buildDataRows(legacy);
+  validateRelations(users, sessions, records);
 
   const summary = {
     mode: apply ? 'APPLY' : 'DRY RUN',
