@@ -128,8 +128,11 @@ class Database {
           bankSyncLogs: parsed.bankSyncLogs || {},
           telegramConnections: parsed.telegramConnections || {},
         };
-      } else if (process.env.NODE_ENV !== 'production') {
-        // Demo data is permitted only in local development.
+      } else if (
+        process.env.NODE_ENV !== 'production' &&
+        process.env.ENABLE_DEMO_SEED === 'true'
+      ) {
+        // Demo data is opt-in for local development; disabled by default.
         this.seedDemoUser();
         this.persist();
       } else {
@@ -137,8 +140,11 @@ class Database {
         this.persist();
       }
 
-      if (process.env.NODE_ENV !== 'production') {
-        // Ensure demo user has initial data for local development only.
+      if (
+        process.env.NODE_ENV !== 'production' &&
+        process.env.ENABLE_DEMO_SEED === 'true'
+      ) {
+        // Ensure demo user has initial data only when explicitly enabled locally.
         this.ensureDemoAdvancedData();
         this.data.sessions['demo_token'] = 'usr_demo_hisobot_2026';
       } else {
@@ -150,7 +156,10 @@ class Database {
       }
     } catch (e) {
       console.error('Database initialization error:', e);
-      if (process.env.NODE_ENV !== 'production') {
+      if (
+        process.env.NODE_ENV !== 'production' &&
+        process.env.ENABLE_DEMO_SEED === 'true'
+      ) {
         this.seedDemoUser();
         this.data.sessions['demo_token'] = 'usr_demo_hisobot_2026';
       }
