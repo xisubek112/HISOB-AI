@@ -56,7 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch {
       api.setToken(null);
-      await loginDemo();
+      setUser(null);
     } finally {
       setLoading(false);
     }
@@ -70,8 +70,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (token) {
       refreshUser();
     } else {
-      // Auto-load demo user if no token exists for immediate frictionless app experience
-      loginDemo().finally(() => setLoading(false));
+      // No saved session: remain signed out. Demo access is user-initiated only.
+      setUser(null);
+      setLoading(false);
     }
   }, []);
 
