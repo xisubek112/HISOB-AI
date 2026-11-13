@@ -89,6 +89,16 @@ begin
     raise exception 'Recurring schedule has invalid amount or transaction type' using errcode = '22023';
   end if;
 
+  if v_rec->>'frequency' not in ('weekly', 'monthly', 'quarterly', 'yearly') then
+    raise exception 'Recurring schedule has an unsupported frequency' using errcode = '22023';
+  end if;
+
+  if coalesce(trim(v_rec->>'categoryId'), '') = ''
+     or coalesce(trim(v_rec->>'categoryName'), '') = ''
+     or coalesce(trim(v_rec->>'paymentMethod'), '') = '' then
+    raise exception 'Recurring schedule is missing transaction details' using errcode = '22023';
+  end if;
+
   -- Same recurring schedule/date cannot be executed twice, even with a new request ID.
   select * into v_execution
   from public.app_recurring_executions
@@ -133,7 +143,7 @@ begin
       and record_key = v_wallet_id;
   end if;
 
-  v_tx_id := 'tx_' || replace(p_execution_id, '-', '_');
+  v_tx_id := 'tx_rec_' || md5(p_user_id || ':' || p_execution_id);
   v_tx := jsonb_build_object(
     'id', v_tx_id,
     'userId', p_user_id,
@@ -179,7 +189,7 @@ begin
     and record_key = p_recurring_id;
 
   v_log := jsonb_build_object(
-    'id', 'log_' || replace(p_execution_id, '-', '_'),
+    'id', 'log_rec_' || md5(p_user_id || ':' || p_execution_id),
     'userId', p_user_id,
     'recurringId', p_recurring_id,
     'description', v_rec->>'description',
@@ -194,7 +204,7 @@ begin
     owner_user_id, collection, scope_key, record_key, payload
   ) values (
     p_user_id, 'recurringLogs', p_user_id,
-    'log_' || replace(p_execution_id, '-', '_'), v_log
+    'log_rec_' || md5(p_user_id || ':' || p_execution_id), v_log
   );
 
   insert into public.app_recurring_executions (
