@@ -21,6 +21,13 @@
     overflow-x: hidden;
   }
 
+  .dark body {
+    background-image:
+      radial-gradient(900px 520px at 18% -10%, rgba(16, 185, 129, 0.12), transparent 65%),
+      radial-gradient(700px 440px at 88% 4%, rgba(6, 182, 212, 0.08), transparent 65%);
+    background-attachment: fixed;
+  }
+
   h1, h2, h3 {
     text-wrap: balance;
   }

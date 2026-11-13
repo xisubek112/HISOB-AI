@@ -8,8 +8,8 @@ import {
   Home,
   Wallet,
   Plus,
-  BarChart3,
-  User,
+  ChartNoAxesCombined,
+  CircleUserRound,
 } from 'lucide-react';
 import { NavTab } from './Sidebar.tsx';
 
@@ -24,72 +24,89 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   onSelectTab,
   onOpenQuickAdd,
 }) => {
-  const navItems: { id: NavTab; label: string; icon: React.ElementType; matchTabs?: NavTab[] }[] = [
-    { id: 'dashboard', label: 'Bosh', icon: Home },
-    { id: 'wallets', label: 'Hamyon', icon: Wallet },
-    { id: 'reports', label: 'Tahlil', icon: BarChart3, matchTabs: ['reports', 'forecast', 'budgets'] },
-    { id: 'settings', label: 'Profil', icon: User },
-  ];
+  const isDashboard = currentTab === 'dashboard';
+  const isWallets = currentTab === 'wallets';
+  const isAnalytics = ['reports', 'forecast', 'budgets'].includes(currentTab);
+  const isProfile = currentTab === 'settings';
 
-  const isTabActive = (item: (typeof navItems)[number]) =>
-    currentTab === item.id || (item.matchTabs?.includes(currentTab) ?? false);
+  const items: {
+    id: string;
+    label: string;
+    icon: React.ElementType;
+    active: boolean;
+    isAdd?: boolean;
+    onClick: () => void;
+  }[] = [
+    {
+      id: 'dashboard',
+      label: 'Bosh',
+      icon: Home,
+      active: isDashboard,
+      onClick: () => onSelectTab('dashboard'),
+    },
+    {
+      id: 'wallets',
+      label: 'Hamyon',
+      icon: Wallet,
+      active: isWallets,
+      onClick: () => onSelectTab('wallets'),
+    },
+    {
+      id: 'add',
+      label: 'Qoʻshish',
+      icon: Plus,
+      active: false,
+      isAdd: true,
+      onClick: onOpenQuickAdd,
+    },
+    {
+      id: 'analytics',
+      label: 'Tahlil',
+      icon: ChartNoAxesCombined,
+      active: isAnalytics,
+      onClick: () => onSelectTab('reports'),
+    },
+    {
+      id: 'profile',
+      label: 'Profil',
+      icon: CircleUserRound,
+      active: isProfile,
+      onClick: () => onSelectTab('settings'),
+    },
+  ];
 
   return (
     <nav
       aria-label="Mobil pastki navigatsiya"
-      className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/92 dark:bg-[#0D1927]/94 backdrop-blur-xl border-t border-slate-200/80 dark:border-white/[0.08] pb-safe"
+      className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 dark:border-white/10 bg-white/95 dark:bg-[#071B18]/95 px-2 pb-[max(env(safe-area-inset-bottom),8px)] pt-2 backdrop-blur-2xl"
     >
-      <div className="grid grid-cols-5 items-center max-w-md mx-auto h-14 px-2">
-        {navItems.slice(0, 2).map((item) => {
+      <div className="mx-auto flex max-w-lg items-center justify-around">
+        {items.map((item) => {
           const Icon = item.icon;
-          const active = isTabActive(item);
           return (
             <button
               key={item.id}
               type="button"
-              onClick={() => onSelectTab(item.id)}
-              aria-current={active ? 'page' : undefined}
-              className={`flex flex-col items-center justify-center gap-0.5 min-h-11 rounded-xl transition-colors cursor-pointer ${
-                active
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              onClick={item.onClick}
+              aria-current={item.active ? 'page' : undefined}
+              className={`flex min-w-[54px] flex-col items-center gap-1 rounded-xl px-2 py-1 text-[10px] font-semibold transition-colors cursor-pointer ${
+                item.active
+                  ? 'text-emerald-600 dark:text-emerald-300'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <Icon className="w-5 h-5" />
-              <span className="text-[11px] font-semibold leading-none whitespace-nowrap">{item.label}</span>
-            </button>
-          );
-        })}
-
-        {/* Central Elevated Quick-Add CTA */}
-        <div className="flex items-center justify-center">
-          <button
-            type="button"
-            onClick={onOpenQuickAdd}
-            aria-label="Tezkor operatsiya qoʻshish"
-            className="w-11 h-11 -mt-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center justify-center shadow-[0_8px_22px_rgba(16,185,129,0.34)] ring-4 ring-[#F4F7F8] dark:ring-[#081220] transition-transform active:scale-95 cursor-pointer"
-          >
-            <Plus className="w-5 h-5 stroke-[2.5]" />
-          </button>
-        </div>
-
-        {navItems.slice(2).map((item) => {
-          const Icon = item.icon;
-          const active = isTabActive(item);
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onSelectTab(item.id)}
-              aria-current={active ? 'page' : undefined}
-              className={`flex flex-col items-center justify-center gap-0.5 min-h-11 rounded-xl transition-colors cursor-pointer ${
-                active
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Icon className="w-5 h-5" />
-              <span className="text-[11px] font-semibold leading-none whitespace-nowrap">{item.label}</span>
+              <span
+                className={`flex h-8 w-8 items-center justify-center rounded-xl transition-transform active:scale-95 ${
+                  item.isAdd
+                    ? 'bg-emerald-500 dark:bg-emerald-400 text-[#05251D] shadow-[0_0_18px_rgba(16,185,129,0.35)]'
+                    : item.active
+                    ? 'bg-emerald-500/15 dark:bg-emerald-400/10'
+                    : ''
+                }`}
+              >
+                <Icon size={19} />
+              </span>
+              <span className="leading-none whitespace-nowrap">{item.label}</span>
             </button>
           );
         })}

@@ -139,6 +139,11 @@ export interface AIChatMessage {
   timestamp: string;
   parsedTransaction?: AIParsedTransaction;
   confirmationState?: 'pending' | 'confirmed' | 'cancelled';
+  scannedReceipt?: Omit<ScannedReceipt, 'id' | 'userId' | 'createdAt'>;
+  receiptSaved?: boolean;
+  structuredRows?: { label: string; value: string; tone?: 'emerald' | 'rose' | 'teal' | 'amber' }[];
+  isError?: boolean;
+  retryQuery?: string;
 }
 
 export interface FinancialSummary {

@@ -8,6 +8,7 @@ export const designTokens = {
     emeraldHover: '#059669',
     teal: '#06B6D4',
     deepNavy: '#081220',
+    darkBg: '#061A18',
     darkSurface: '#0D1927',
     elevatedSurface: '#111B27',
     lightBg: '#F4F7F8',

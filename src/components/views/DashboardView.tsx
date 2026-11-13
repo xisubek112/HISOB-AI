@@ -5,18 +5,33 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  ArrowUpRight,
-  ArrowDownLeft,
   Plus,
-  Target,
+  Minus,
   Mic,
-  Crown,
-  Receipt,
-  ArrowRight,
-  ArrowRightLeft,
-  BarChart3,
+  ScanLine,
+  ArrowLeftRight,
+  MoreHorizontal,
+  ChevronRight,
+  Sparkles,
+  Bot,
+  ShoppingBag,
+  Car,
+  Home,
+  Utensils,
+  Briefcase,
+  CreditCard,
+  Target,
+  PieChart,
+  HandCoins,
+  Users,
+  Clock,
+  Repeat,
+  Coins,
+  Building2,
+  Send,
   TrendingUp,
-  Wallet,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
 import {
   FinancialSummary,
@@ -24,27 +39,19 @@ import {
   FinancialGoal,
   FinancialHealthScore,
 } from '../../types/finance.ts';
-import { formatMoney } from '../../utils/formatters.ts';
-import {
-  IncomeExpenseBarChart,
-  CategoryProgressList,
-  InteractivePieChart,
-  DailyTrendLineChart,
-  BudgetGaugeChart,
-} from '../charts/InteractiveCharts.tsx';
+import { formatMoney, formatDateUz } from '../../utils/formatters.ts';
+import { IncomeExpenseBarChart } from '../charts/InteractiveCharts.tsx';
 import { NavTab } from '../layout/Sidebar.tsx';
+import { DashboardPeriod } from '../layout/Header.tsx';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { api } from '../../services/api.ts';
 import {
   BalanceCard,
   Card,
-  ChartCard,
-  AIInsightCard,
-  TransactionRow,
-  ProgressBar,
   Skeleton,
   EmptyState,
   Button,
+  Drawer,
 } from '../../design-system/index.ts';
 
 interface DashboardViewProps {
@@ -52,13 +59,25 @@ interface DashboardViewProps {
   recentTransactions: Transaction[];
   goals: FinancialGoal[];
   loading?: boolean;
+  selectedPeriod: DashboardPeriod;
+  onSelectPeriod: (period: DashboardPeriod) => void;
   onOpenTransactionModal: (type: 'income' | 'expense') => void;
   onOpenVoiceModal?: () => void;
+  onOpenGoalModal?: () => void;
   onEditTransaction: (tx: Transaction) => void;
   onDeleteTransaction: (id: string) => Promise<void>;
   onNavigateTab: (tab: NavTab) => void;
   onOpenGoalDeposit: (goal: FinancialGoal) => void;
-  onOpenPremiumModal?: () => void;
+}
+
+function getTxIcon(categoryName: string, type: 'income' | 'expense') {
+  const lower = categoryName.toLowerCase();
+  if (type === 'income') return Briefcase;
+  if (lower.includes('ovqat') || lower.includes('kafe') || lower.includes('market')) return Utensils;
+  if (lower.includes('transport') || lower.includes('yoqilg')) return Car;
+  if (lower.includes('uy') || lower.includes('ijara')) return Home;
+  if (lower.includes('xarid') || lower.includes('kiyim')) return ShoppingBag;
+  return CreditCard;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -66,35 +85,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   recentTransactions,
   goals,
   loading = false,
+  selectedPeriod,
+  onSelectPeriod,
   onOpenTransactionModal,
   onOpenVoiceModal,
+  onOpenGoalModal,
   onEditTransaction,
   onDeleteTransaction,
   onNavigateTab,
   onOpenGoalDeposit,
-  onOpenPremiumModal,
 }) => {
   const { user } = useAuth();
-  const [leftChartType, setLeftChartType] = useState<'bar' | 'line'>('bar');
-  const [rightViewMode, setRightViewMode] = useState<'budget' | 'donut' | 'list'>('donut');
-  const [txFilter, setTxFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [chartGranularity, setChartGranularity] = useState<'week' | 'month' | 'year'>('week');
   const [healthScore, setHealthScore] = useState<FinancialHealthScore | null>(null);
-  const [insightLoading, setInsightLoading] = useState(false);
+  const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     let active = true;
     const loadAIInsight = async () => {
       try {
-        setInsightLoading(true);
         const res = await api.getHealthScore();
         if (active && res?.healthScore) {
           setHealthScore(res.healthScore);
         }
       } catch {
-        // Silent fallback handled cleanly in UI badge
-      } finally {
-        if (active) setInsightLoading(false);
+        // Fallback summary computed below
       }
     };
     loadAIInsight();
@@ -106,618 +122,482 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const totalBalance = summary?.totalBalance ?? 0;
   const totalIncome = summary?.totalIncome ?? 0;
   const totalExpense = summary?.totalExpense ?? 0;
-  const netSavings = summary?.netSavings ?? totalIncome - totalExpense;
-  const savingsRate = summary?.savingsRate ?? 0;
   const monthlyBudgetLimit = user?.monthlyBudget || 5000000;
   const budgetUsedPct =
-    monthlyBudgetLimit > 0 ? Math.round((totalExpense / monthlyBudgetLimit) * 100) : 0;
-  const budgetRemaining = monthlyBudgetLimit - totalExpense;
+    monthlyBudgetLimit > 0 ? Math.min(999, Math.round((totalExpense / monthlyBudgetLimit) * 100)) : 0;
+  const ringClampedPct = Math.max(0, Math.min(100, budgetUsedPct));
 
-  const filteredTransactions = useMemo(() => {
-    const base =
-      txFilter === 'all'
-        ? recentTransactions
-        : recentTransactions.filter((t) => t.type === txFilter);
-    return base.slice(0, 7);
-  }, [recentTransactions, txFilter]);
+  const aiAdviceText = useMemo(() => {
+    if (healthScore?.summary) return healthScore.summary;
+    const topCat = summary?.categoriesBreakdown?.[0];
+    if (topCat && totalExpense > 0) {
+      const suggestedLimit = Math.round((topCat.amount * 0.9) / 50000) * 50000;
+      return `Ushbu davrda ${topCat.categoryName.toLowerCase()} xarajatlaringiz jami sarfning ${topCat.percentage}% qismini tashkil etdi. Keyingi oy uchun ${formatMoney(
+        Math.max(100000, suggestedLimit)
+      )} limit belgilashni tavsiya qilaman.`;
+    }
+    return 'Xarajatlaringizni tahlil qilib, budjetingizni samarali boshqarishga yordam beramiz.';
+  }, [healthScore?.summary, summary?.categoriesBreakdown, totalExpense]);
 
-  const firstName = (user?.fullName || 'Foydalanuvchi').trim().split(/\s+/)[0];
-  const currentMonthLabel = new Intl.DateTimeFormat('uz-UZ', {
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date());
+  const chartData = useMemo(() => {
+    if (chartGranularity === 'week') {
+      const daily = summary?.dailyBreakdown || [];
+      if (daily.length > 0) {
+        return daily.slice(-6).map((d) => ({
+          month: formatDateUz(d.date).split(',')[0],
+          income: d.income,
+          expense: d.expense,
+          savings: d.income - d.expense,
+        }));
+      }
+    }
+    if (chartGranularity === 'year') {
+      return (summary?.monthlyComparison || []).slice(-12);
+    }
+    return (summary?.monthlyComparison || []).slice(-6);
+  }, [chartGranularity, summary?.dailyBreakdown, summary?.monthlyComparison]);
 
-  const hasLiveInsight = Boolean(healthScore && healthScore.summary);
-  const insightText = hasLiveInsight
-    ? `${healthScore!.summary} Moliyaviy salomatlik indeksi: ${healthScore!.score}/100 (${healthScore!.grade} daraja).`
-    : 'Masalan: «Bugun 150 ming soʻm ovqatga sarfladim» yoki «Ishdan 5 million oylik oldim» deb yozib yoki gapirib koʻring.';
+  const quickActions = [
+    {
+      label: 'Kirim',
+      icon: Plus,
+      color: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/12 dark:bg-emerald-400/10',
+      onClick: () => onOpenTransactionModal('income'),
+    },
+    {
+      label: 'Chiqim',
+      icon: Minus,
+      color: 'text-rose-600 dark:text-rose-400 bg-rose-500/12 dark:bg-rose-400/10',
+      onClick: () => onOpenTransactionModal('expense'),
+    },
+    {
+      label: 'Ovoz bilan',
+      icon: Mic,
+      color: 'text-cyan-600 dark:text-cyan-400 bg-cyan-500/12 dark:bg-cyan-400/10',
+      onClick: () => (onOpenVoiceModal ? onOpenVoiceModal() : onNavigateTab('ai')),
+    },
+    {
+      label: 'Chek skaneri',
+      icon: ScanLine,
+      color: 'text-sky-600 dark:text-sky-400 bg-sky-500/12 dark:bg-sky-400/10',
+      onClick: () => onNavigateTab('receipts'),
+    },
+    {
+      label: 'Oʻtkazma',
+      icon: ArrowLeftRight,
+      color: 'text-amber-600 dark:text-amber-400 bg-amber-500/12 dark:bg-amber-400/10',
+      onClick: () => onNavigateTab('wallets'),
+    },
+    {
+      label: 'Yana',
+      icon: MoreHorizontal,
+      color: 'text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-white/[0.06]',
+      onClick: () => setMoreDrawerOpen(true),
+    },
+  ];
+
+  const moreTools: { id: NavTab; label: string; icon: React.ElementType }[] = [
+    { id: 'wallets', label: 'Hamyonlar', icon: ArrowLeftRight },
+    { id: 'budgets', label: 'Budjetlar', icon: PieChart },
+    { id: 'debts', label: 'Qarzlar', icon: HandCoins },
+    { id: 'family', label: 'Oilaviy budjet', icon: Users },
+    { id: 'subscriptions', label: 'Obunalar', icon: Clock },
+    { id: 'recurring', label: 'Avto-toʻlovlar', icon: Repeat },
+    { id: 'currencies', label: 'Valyutalar', icon: Coins },
+    { id: 'banks', label: 'Banklar', icon: Building2 },
+    { id: 'telegram', label: 'Telegram Bot', icon: Send },
+  ];
 
   if (loading) {
     return (
-      <div className="space-y-6 pb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <Skeleton className="h-12 w-64 rounded-xl" />
-          <Skeleton className="h-11 w-72 rounded-xl" />
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          <Skeleton className="lg:col-span-7 h-56 rounded-[22px]" />
-          <div className="lg:col-span-5 grid grid-cols-2 lg:grid-cols-1 gap-4">
-            <Skeleton className="h-26 rounded-2xl" />
-            <Skeleton className="h-26 rounded-2xl" />
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_310px] gap-4 pb-6">
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_.9fr] gap-4">
+            <Skeleton className="h-48 rounded-[22px]" />
+            <Skeleton className="h-48 rounded-[22px]" />
+          </div>
+          <Skeleton className="h-24 rounded-[22px]" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Skeleton className="h-44 rounded-[22px]" />
+            <Skeleton className="h-44 rounded-[22px]" />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_.8fr] gap-4">
+            <Skeleton className="h-64 rounded-[22px]" />
+            <Skeleton className="h-64 rounded-[22px]" />
           </div>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          <Skeleton className="lg:col-span-7 h-36 rounded-2xl" />
-          <Skeleton className="lg:col-span-5 h-36 rounded-2xl" />
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <Skeleton className="lg:col-span-8 h-80 rounded-2xl" />
-          <Skeleton className="lg:col-span-4 h-80 rounded-2xl" />
-        </div>
+        <Skeleton className="h-[460px] rounded-[22px]" />
       </div>
     );
   }
 
   return (
-    <div className="w-full min-w-0 max-w-full space-y-6 pb-4 hai-fade-up">
-      {/* 1. Refined Page Heading & Action Area */}
-      <section
-        aria-label="Sahifa sarlavhasi va tezkor amallar"
-        className="flex flex-col md:flex-row md:items-end justify-between gap-4"
-      >
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 capitalize">
-            {currentMonthLabel} · Shaxsiy moliya sharhi
-          </p>
-          <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white mt-0.5 truncate">
-            Assalomu alaykum, {firstName}
-          </h2>
-        </div>
+    <div className="w-full min-w-0 max-w-full pb-2 hai-fade-up">
+      {/* Mobile Quick Period Selector (< sm where header dropdown is hidden) */}
+      <div className="sm:hidden flex items-center justify-between gap-2 mb-3">
+        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+          Hisobot davri:
+        </span>
+        <select
+          aria-label="Hisobot davrini tanlash"
+          value={selectedPeriod}
+          onChange={(e) => onSelectPeriod(e.target.value as DashboardPeriod)}
+          className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#0D1927] border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-100"
+        >
+          <option value="this_month">Joriy oy</option>
+          <option value="last_month">Oʻtgan oy</option>
+          <option value="7days">Soʻnggi 7 kun</option>
+          <option value="30days">Soʻnggi 30 kun</option>
+          <option value="this_year">Joriy yil</option>
+        </select>
+      </div>
 
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 shrink-0">
-          <Button
-            variant="primary"
-            size="md"
-            leadingIcon={<Plus className="w-4 h-4" />}
-            onClick={() => onOpenTransactionModal('income')}
-          >
-            Kirim qoʻshish
-          </Button>
-          <Button
-            variant="outline"
-            size="md"
-            leadingIcon={<ArrowUpRight className="w-4 h-4 text-rose-500" />}
-            onClick={() => onOpenTransactionModal('expense')}
-          >
-            Chiqim yozish
-          </Button>
-          {onOpenVoiceModal && (
-            <Button
-              variant="secondary"
-              size="md"
-              leadingIcon={<Mic className="w-4 h-4 text-cyan-500 dark:text-cyan-400" />}
-              onClick={onOpenVoiceModal}
-              className="col-span-2 sm:col-span-1"
+      {/* MAIN GRID: Center Content + Right Transactions Panel */}
+      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_305px] 2xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-4">
+          {/* 1. BALANCE + HISOBOT AI */}
+          <div className="grid gap-4 lg:grid-cols-[1.3fr_.9fr]">
+            <BalanceCard
+              amount={totalBalance}
+              incomeTotal={totalIncome}
+              expenseTotal={totalExpense}
+              actionLabel="Hamyonlar"
+              onActionClick={() => onNavigateTab('wallets')}
+            />
+
+            <section
+              aria-label="HISOBOT AI yordamchisi"
+              className="relative flex min-h-[190px] items-center gap-4 overflow-hidden rounded-[22px] border border-emerald-500/20 dark:border-white/[0.09] bg-gradient-to-br from-[#0F3F3A] via-[#0E3130] to-[#0C2228] p-5 text-white shadow-[0_16px_45px_rgba(0,0,0,0.22)]"
             >
-              Ovoz bilan
-            </Button>
-          )}
-        </div>
-      </section>
-
-      {/* 2 & 3. Hero Balance Card + Paired Income & Expense Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-        <div className="lg:col-span-7">
-          <BalanceCard
-            amount={totalBalance}
-            incomeTotal={totalIncome}
-            expenseTotal={totalExpense}
-            netSavings={netSavings}
-            savingsRate={savingsRate}
-            actionLabel="Hamyonlar"
-            onActionClick={() => onNavigateTab('wallets')}
-            className="h-full flex flex-col justify-between"
-          />
-        </div>
-
-        <div className="lg:col-span-5 grid grid-cols-2 lg:grid-cols-1 gap-3.5 sm:gap-4">
-          {/* Monthly Income Card */}
-          <Card padding="md" className="flex flex-col justify-between">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">
-                  Oylik daromad
-                </span>
-                <div className="text-base sm:text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums tracking-tight mt-1.5 break-words">
-                  +{formatMoney(totalIncome)}
-                </div>
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-teal-400/12 blur-3xl"
+              />
+              <div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-teal-300/25 bg-teal-300/10 text-teal-300 shadow-[0_0_30px_rgba(6,182,212,0.14)]">
+                <Bot size={36} />
+                <Sparkles className="absolute -right-1 -top-1 text-emerald-300" size={16} />
               </div>
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
-                <ArrowDownLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+              <div className="relative min-w-0 flex-1">
+                <h2 className="mb-1 text-lg font-black tracking-tight text-white">HISOBOT AI</h2>
+                <p className="mb-3.5 text-xs leading-relaxed text-slate-200/85">
+                  Sizning aqlli moliyaviy yordamchingiz.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('ai')}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-3.5 py-2 text-xs font-bold text-[#05251D] transition hover:bg-emerald-300 cursor-pointer shadow-[0_4px_16px_rgba(16,185,129,0.28)]"
+                >
+                  <span>AI bilan suhbat</span>
+                  <ChevronRight size={15} />
+                </button>
               </div>
-            </div>
-            <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-white/[0.06] flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-              <span className="tabular-nums">{summary?.incomeCount || 0} ta tushum</span>
-              <button
-                type="button"
-                onClick={() => onNavigateTab('income')}
-                className="font-semibold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer whitespace-nowrap"
-              >
-                Batafsil →
-              </button>
+            </section>
+          </div>
+
+          {/* 2. QUICK ACTIONS STRIP */}
+          <Card padding="none" className="p-3 sm:p-4">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              {quickActions.map(({ label, icon: Icon, color, onClick }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={onClick}
+                  className="group flex min-w-0 flex-col items-center gap-2 rounded-xl px-1 py-2 transition hover:bg-slate-100/70 dark:hover:bg-white/[0.05] cursor-pointer"
+                >
+                  <span
+                    className={`flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200/70 dark:border-white/[0.08] transition group-hover:scale-105 ${color}`}
+                  >
+                    <Icon size={20} />
+                  </span>
+                  <span className="text-center text-[11px] font-semibold text-slate-700 dark:text-slate-300 group-hover:text-slate-950 dark:group-hover:text-white whitespace-nowrap">
+                    {label}
+                  </span>
+                </button>
+              ))}
             </div>
           </Card>
 
-          {/* Monthly Expense Card */}
-          <Card padding="md" className="flex flex-col justify-between">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">
-                  Oylik xarajat
-                </span>
-                <div className="text-base sm:text-2xl font-extrabold text-rose-600 dark:text-rose-400 tabular-nums tracking-tight mt-1.5 break-words">
-                  -{formatMoney(totalExpense)}
+          {/* 3. OYLIK BUDJET + AI TAVSIYASI */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card padding="none" className="p-4 sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <h3 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white sm:text-base">
+                  Oylik budjet
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('budgets')}
+                  className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 cursor-pointer"
+                >
+                  Batafsil →
+                </button>
+              </div>
+
+              <div className="flex items-center gap-5">
+                <div
+                  className="relative flex h-24 w-24 shrink-0 items-center justify-center rounded-full"
+                  style={{
+                    background: `conic-gradient(${
+                      budgetUsedPct > 100 ? '#EF4444' : '#10B981'
+                    } 0% ${ringClampedPct}%, rgba(148,163,184,0.22) ${ringClampedPct}% 100%)`,
+                  }}
+                >
+                  <div className="flex h-[76px] w-[76px] flex-col items-center justify-center rounded-full bg-white dark:bg-[#0D1927]">
+                    <b className="text-xl text-slate-900 dark:text-white tabular-nums leading-none">
+                      {budgetUsedPct}%
+                    </b>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                      Sarflangan
+                    </span>
+                  </div>
+                </div>
+
+                <div className="min-w-0 space-y-2.5 text-xs">
+                  <div className="text-slate-500 dark:text-slate-400">
+                    Sarflangan{' '}
+                    <b className="block text-sm font-bold text-slate-900 dark:text-white tabular-nums mt-0.5 truncate">
+                      {formatMoney(totalExpense)}
+                    </b>
+                  </div>
+                  <div className="text-slate-500 dark:text-slate-400">
+                    Limit{' '}
+                    <b className="block text-sm font-bold text-slate-800 dark:text-slate-200 tabular-nums mt-0.5 truncate">
+                      {formatMoney(monthlyBudgetLimit)}
+                    </b>
+                  </div>
                 </div>
               </div>
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-rose-500/12 text-rose-600 dark:text-rose-400 border border-rose-500/20 flex items-center justify-center shrink-0">
-                <ArrowUpRight className="w-4 h-4 sm:w-5 sm:h-5" />
+            </Card>
+
+            <Card padding="none" className="relative overflow-hidden p-4 sm:p-5 flex flex-col justify-between">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-teal-400/[0.10] blur-2xl"
+              />
+              <div>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white sm:text-base flex items-center gap-1.5">
+                    <span>AI tavsiyasi</span>
+                    <Sparkles className="w-4 h-4 text-emerald-500" />
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => onNavigateTab('ai')}
+                    className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 cursor-pointer"
+                  >
+                    Batafsil →
+                  </button>
+                </div>
+                <p className="mb-4 text-xs leading-relaxed text-slate-600 dark:text-slate-300 line-clamp-3">
+                  {aiAdviceText}
+                </p>
               </div>
-            </div>
-            <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-white/[0.06] flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-              <span className="tabular-nums">{summary?.expenseCount || 0} ta chiqim</span>
+
+              <button
+                type="button"
+                onClick={() => onNavigateTab('forecast')}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 px-3 py-2.5 text-xs font-bold text-[#03251C] transition-all cursor-pointer shadow-[0_6px_18px_rgba(16,185,129,0.25)]"
+              >
+                <span>Tahlilni koʻrish</span>
+                <ChevronRight size={15} />
+              </button>
+            </Card>
+          </div>
+
+          {/* 4. CHART + MAQSADLAR */}
+          <div className="grid gap-4 lg:grid-cols-[1.2fr_.8fr]">
+            <Card padding="none" className="p-4 sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <h3 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white sm:text-base">
+                  Daromad va xarajat dinamikasi
+                </h3>
+                <select
+                  aria-label="Grafik davrini tanlash"
+                  value={chartGranularity}
+                  onChange={(e) => setChartGranularity(e.target.value as 'week' | 'month' | 'year')}
+                  className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-[#142A31] px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 outline-none cursor-pointer"
+                >
+                  <option value="week">Hafta</option>
+                  <option value="month">Oy</option>
+                  <option value="year">Yil</option>
+                </select>
+              </div>
+
+              <IncomeExpenseBarChart data={chartData} height={220} compact />
+            </Card>
+
+            <Card padding="none" className="p-4 sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <h3 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white sm:text-base">
+                  Maqsadlar
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => (onOpenGoalModal ? onOpenGoalModal() : onNavigateTab('goals'))}
+                  className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 cursor-pointer"
+                >
+                  Yangi maqsad +
+                </button>
+              </div>
+
+              {goals.length === 0 ? (
+                <EmptyState
+                  icon={<Target className="w-5 h-5" />}
+                  title="Maqsadlar mavjud emas"
+                  description="Yangi moliyaviy maqsad yarating."
+                  action={
+                    <Button
+                      size="sm"
+                      onClick={() => (onOpenGoalModal ? onOpenGoalModal() : onNavigateTab('goals'))}
+                    >
+                      Maqsad qoʻshish
+                    </Button>
+                  }
+                />
+              ) : (
+                <div className="space-y-4">
+                  {goals.slice(0, 4).map((goal, idx) => {
+                    const percent =
+                      goal.targetAmount > 0
+                        ? Math.min(100, Math.round((goal.savedAmount / goal.targetAmount) * 100))
+                        : 0;
+                    const barGrad =
+                      idx % 2 === 0
+                        ? 'from-emerald-600 to-emerald-300'
+                        : 'from-teal-600 to-teal-300';
+                    return (
+                      <div
+                        key={goal.id}
+                        onClick={() => onOpenGoalDeposit(goal)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onOpenGoalDeposit(goal);
+                          }
+                        }}
+                        className="group cursor-pointer rounded-xl p-2 -mx-2 hover:bg-slate-100/70 dark:hover:bg-white/[0.04] transition-colors"
+                      >
+                        <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
+                          <span className="font-semibold text-slate-800 dark:text-slate-100 truncate flex items-center gap-1.5">
+                            <Target className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            <span className="truncate">{goal.name}</span>
+                          </span>
+                          <b className="text-emerald-600 dark:text-emerald-300 tabular-nums shrink-0">
+                            {percent}%
+                          </b>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-slate-200/80 dark:bg-white/10">
+                          <div
+                            className={`h-full rounded-full bg-gradient-to-r ${barGrad} transition-[width] duration-500`}
+                            style={{ width: `${Math.max(4, percent)}%` }}
+                          />
+                        </div>
+                        <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                          <span className="truncate">
+                            {formatMoney(goal.savedAmount)} / {formatMoney(goal.targetAmount)}
+                          </span>
+                          <span className="text-emerald-600 dark:text-emerald-400 font-semibold opacity-80 group-hover:opacity-100 shrink-0">
+                            + Toʻldirish
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          </div>
+        </div>
+
+        {/* RIGHT STICKY TRANSACTIONS PANEL (visible on xl+ alongside workspace, stacked cleanly below on mobile/tablet) */}
+        <aside className="min-w-0">
+          <Card padding="none" className="xl:sticky xl:top-20 p-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white sm:text-base">
+                Soʻnggi tranzaksiyalar
+              </h3>
               <button
                 type="button"
                 onClick={() => onNavigateTab('expense')}
-                className="font-semibold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer whitespace-nowrap"
-              >
-                Batafsil →
-              </button>
-            </div>
-          </Card>
-        </div>
-      </div>
-
-      {/* 4. Savings & Budget Summary + Compact Quick Tools */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-        <Card padding="md" className="lg:col-span-7 flex flex-col justify-between">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <div className="min-w-0">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                Oylik budjet va jamgʻarma xulosasi
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Belgilangan limit boʻyicha joriy oy sarfi
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNavigateTab('budgets')}
-              className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline whitespace-nowrap cursor-pointer shrink-0"
-            >
-              Budjetlar →
-            </button>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3 sm:gap-4 pb-3.5">
-            <div className="min-w-0">
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
-                Qolgan limit
-              </span>
-              <span
-                className={`text-sm sm:text-lg font-extrabold tabular-nums block mt-0.5 truncate ${
-                  budgetRemaining >= 0
-                    ? 'text-slate-900 dark:text-white'
-                    : 'text-rose-600 dark:text-rose-400'
-                }`}
-              >
-                {budgetRemaining >= 0
-                  ? formatMoney(budgetRemaining)
-                  : `-${formatMoney(Math.abs(budgetRemaining))}`}
-              </span>
-            </div>
-
-            <div className="min-w-0">
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
-                Oylik meʼyor
-              </span>
-              <span className="text-sm sm:text-lg font-bold text-slate-700 dark:text-slate-200 tabular-nums block mt-0.5 truncate">
-                {formatMoney(monthlyBudgetLimit)}
-              </span>
-            </div>
-
-            <div className="min-w-0 text-right">
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
-                Sof jamgʻarma
-              </span>
-              <span
-                className={`text-sm sm:text-lg font-extrabold tabular-nums block mt-0.5 truncate ${
-                  netSavings >= 0
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-rose-600 dark:text-rose-400'
-                }`}
-              >
-                {netSavings >= 0 ? '+' : '-'}
-                {formatMoney(Math.abs(netSavings))}
-              </span>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <ProgressBar
-              size="md"
-              value={budgetUsedPct}
-              tone={budgetUsedPct > 100 ? 'rose' : budgetUsedPct >= 80 ? 'amber' : 'emerald'}
-              label="Oylik budjet sarflanishi"
-            />
-            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-              <span>Limitdan {budgetUsedPct}% sarflandi</span>
-              <span>Tejash koʻrsatkichi: {savingsRate}%</span>
-            </div>
-          </div>
-        </Card>
-
-        {/* Compact Quick Tools Grid */}
-        <Card padding="md" className="lg:col-span-5 flex flex-col justify-between">
-          <div className="flex items-center justify-between gap-2 mb-3">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              Tezkor vositalar
-            </h3>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400">
-              Asosiy boʻlimlarga oʻtish
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2.5">
-            <button
-              type="button"
-              onClick={() => onNavigateTab('receipts')}
-              className="flex items-center gap-2.5 min-h-12 p-2.5 rounded-xl border border-slate-200/80 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.02] hover:border-emerald-500/40 transition-colors text-left cursor-pointer"
-            >
-              <span className="w-8 h-8 rounded-lg bg-white dark:bg-white/[0.07] border border-slate-200/70 dark:border-white/[0.08] flex items-center justify-center text-slate-700 dark:text-slate-200 shrink-0">
-                <Receipt className="w-4 h-4" />
-              </span>
-              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
-                Chek skaneri
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onNavigateTab('wallets')}
-              className="flex items-center gap-2.5 min-h-12 p-2.5 rounded-xl border border-slate-200/80 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.02] hover:border-emerald-500/40 transition-colors text-left cursor-pointer"
-            >
-              <span className="w-8 h-8 rounded-lg bg-white dark:bg-white/[0.07] border border-slate-200/70 dark:border-white/[0.08] flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
-                <ArrowRightLeft className="w-4 h-4" />
-              </span>
-              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
-                Oʻtkazma
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onNavigateTab('reports')}
-              className="flex items-center gap-2.5 min-h-12 p-2.5 rounded-xl border border-slate-200/80 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.02] hover:border-emerald-500/40 transition-colors text-left cursor-pointer"
-            >
-              <span className="w-8 h-8 rounded-lg bg-white dark:bg-white/[0.07] border border-slate-200/70 dark:border-white/[0.08] flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
-                <BarChart3 className="w-4 h-4" />
-              </span>
-              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
-                Hisobotlar
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onNavigateTab('forecast')}
-              className="flex items-center gap-2.5 min-h-12 p-2.5 rounded-xl border border-slate-200/80 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.02] hover:border-cyan-500/40 transition-colors text-left cursor-pointer"
-            >
-              <span className="w-8 h-8 rounded-lg bg-white dark:bg-white/[0.07] border border-slate-200/70 dark:border-white/[0.08] flex items-center justify-center text-cyan-600 dark:text-cyan-400 shrink-0">
-                <TrendingUp className="w-4 h-4" />
-              </span>
-              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
-                AI Prognoz
-              </span>
-            </button>
-          </div>
-        </Card>
-      </div>
-
-      {/* 5. Spacious Interactive Analytics Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
-        <ChartCard
-          className="lg:col-span-8"
-          title={
-            leftChartType === 'bar'
-              ? 'Daromad va xarajat dinamikasi'
-              : 'Kunlik pul oqimi grafigi'
-          }
-          subtitle={
-            leftChartType === 'bar'
-              ? 'Oylar boʻyicha tushum, xarajat va sof jamgʻarma'
-              : 'Kunlik tushum va xarajatlar trendi'
-          }
-          headerAction={
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="p-1 bg-slate-100 dark:bg-white/[0.06] rounded-xl flex items-center border border-slate-200/70 dark:border-white/[0.08]">
-                <button
-                  type="button"
-                  onClick={() => setLeftChartType('bar')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                    leftChartType === 'bar'
-                      ? 'bg-white dark:bg-[#111B27] text-slate-900 dark:text-white shadow-xs'
-                      : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                >
-                  Ustunli
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLeftChartType('line')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                    leftChartType === 'line'
-                      ? 'bg-white dark:bg-[#111B27] text-slate-900 dark:text-white shadow-xs'
-                      : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                >
-                  Chiziqli
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={() => onNavigateTab('reports')}
-                className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline px-2 py-1 cursor-pointer whitespace-nowrap"
-              >
-                Hisobotlar →
-              </button>
-            </div>
-          }
-        >
-          {leftChartType === 'bar' ? (
-            <IncomeExpenseBarChart data={summary?.monthlyComparison || []} height={265} />
-          ) : (
-            <DailyTrendLineChart data={summary?.dailyBreakdown || []} height={265} />
-          )}
-        </ChartCard>
-
-        <ChartCard
-          className="lg:col-span-4"
-          title="Toifalar va budjet"
-          subtitle="Joriy oydagi asosiy chiqimlar"
-          headerAction={
-            <div className="p-1 bg-slate-100 dark:bg-white/[0.06] rounded-xl flex items-center border border-slate-200/70 dark:border-white/[0.08]">
-              <button
-                type="button"
-                onClick={() => setRightViewMode('donut')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                  rightViewMode === 'donut'
-                    ? 'bg-white dark:bg-[#111B27] text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                Doira
-              </button>
-              <button
-                type="button"
-                onClick={() => setRightViewMode('list')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                  rightViewMode === 'list'
-                    ? 'bg-white dark:bg-[#111B27] text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                Roʻyxat
-              </button>
-              <button
-                type="button"
-                onClick={() => setRightViewMode('budget')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                  rightViewMode === 'budget'
-                    ? 'bg-white dark:bg-[#111B27] text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                Budjet
-              </button>
-            </div>
-          }
-          footer={
-            <Button
-              variant="outline"
-              size="sm"
-              fullWidth
-              onClick={() => onNavigateTab('budgets')}
-            >
-              Budjet limitlarini boshqarish
-            </Button>
-          }
-        >
-          {rightViewMode === 'donut' ? (
-            <InteractivePieChart
-              categories={summary?.categoriesBreakdown || []}
-              totalAmount={totalExpense}
-            />
-          ) : rightViewMode === 'list' ? (
-            <CategoryProgressList
-              categories={summary?.categoriesBreakdown || []}
-              totalExpense={totalExpense}
-            />
-          ) : (
-            <div className="py-4">
-              <BudgetGaugeChart
-                spent={totalExpense}
-                limit={monthlyBudgetLimit}
-                percentage={budgetUsedPct}
-              />
-            </div>
-          )}
-        </ChartCard>
-      </div>
-
-      {/* 6 & 7. Recent Transactions + AI Financial Insight & Goals */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
-        {/* 6. Recent Transactions */}
-        <Card padding="lg" className="lg:col-span-7 flex flex-col justify-between">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3.5 border-b border-slate-100 dark:border-white/[0.08]">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                Soʻnggi tranzaksiyalar
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Oxirgi kirim va chiqim operatsiyalari
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="p-1 bg-slate-100 dark:bg-white/[0.06] rounded-xl flex items-center border border-slate-200/70 dark:border-white/[0.08]">
-                {(
-                  [
-                    { id: 'all', label: 'Barchasi' },
-                    { id: 'income', label: 'Kirim' },
-                    { id: 'expense', label: 'Chiqim' },
-                  ] as const
-                ).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setTxFilter(item.id)}
-                    className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                      txFilter === item.id
-                        ? 'bg-white dark:bg-[#111B27] text-slate-900 dark:text-white shadow-xs'
-                        : 'text-slate-500 dark:text-slate-400'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={() => onNavigateTab(txFilter === 'income' ? 'income' : 'expense')}
-                className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline px-1.5 py-1 cursor-pointer whitespace-nowrap"
+                className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 cursor-pointer whitespace-nowrap"
               >
                 Barchasi →
               </button>
             </div>
-          </div>
 
-          {filteredTransactions.length === 0 ? (
-            <EmptyState
-              icon={<Wallet className="w-5 h-5" />}
-              title="Tranzaksiyalar topilmadi"
-              description="Tanlangan filtr boʻyicha yozuvlar mavjud emas yoki yangi operatsiya qoʻshing."
-              action={
-                <Button size="sm" onClick={() => onOpenTransactionModal('expense')}>
-                  Chiqim qoʻshish
-                </Button>
-              }
-            />
-          ) : (
-            <div className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-              {filteredTransactions.map((tx) => (
-                <TransactionRow
-                  key={tx.id}
-                  transaction={tx}
-                  onEdit={onEditTransaction}
-                  onDelete={onDeleteTransaction}
-                />
-              ))}
-            </div>
-          )}
-        </Card>
-
-        {/* 7. AI Insight + Goals */}
-        <div className="lg:col-span-5 space-y-5">
-          {insightLoading && !healthScore ? (
-            <Skeleton className="h-44 rounded-2xl" />
-          ) : (
-            <AIInsightCard
-              title="AI moliyaviy tavsiyasi"
-              sourceLabel={
-                hasLiveInsight
-                  ? `${healthScore!.title} · Tejash ulushi ${savingsRate}%`
-                  : 'Ovozli va matnli kiritish namunasi'
-              }
-              insight={insightText}
-              isLiveInsight={hasLiveInsight}
-              ctaLabel="AI bilan suhbat"
-              onCtaClick={() => onNavigateTab('ai')}
-              secondaryAction={
-                <button
-                  type="button"
-                  onClick={() => onNavigateTab('forecast')}
-                  className="px-3 py-2 rounded-xl text-xs font-semibold text-cyan-700 dark:text-cyan-300 hover:bg-cyan-500/10 transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  3 oylik prognoz →
-                </button>
-              }
-            />
-          )}
-
-          <Card padding="lg">
-            <div className="flex items-center justify-between gap-2 mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
-                  <Target className="w-4 h-4" />
-                </div>
-                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Maqsadlar
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => onNavigateTab('goals')}
-                className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer whitespace-nowrap"
-              >
-                Barchasi ({goals.length})
-              </button>
-            </div>
-
-            {goals.length === 0 ? (
+            {recentTransactions.length === 0 ? (
               <EmptyState
-                icon={<Target className="w-5 h-5" />}
-                title="Maqsadlar mavjud emas"
-                description="Avtomobil, uy-joy yoki jamgʻarma maqsadini qoʻshing."
+                icon={<CreditCard className="w-5 h-5" />}
+                title="Tranzaksiyalar yoʻq"
+                description="Birinchi operatsiyani kiriting."
                 action={
-                  <Button size="sm" onClick={() => onNavigateTab('goals')}>
-                    Maqsad qoʻshish
+                  <Button size="sm" onClick={() => onOpenTransactionModal('expense')}>
+                    Qoʻshish
                   </Button>
                 }
               />
             ) : (
-              <div className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-                {goals.slice(0, 3).map((goal) => {
-                  const percent =
-                    goal.targetAmount > 0
-                      ? Math.min(100, Math.round((goal.savedAmount / goal.targetAmount) * 100))
-                      : 0;
+              <div className="space-y-1">
+                {recentTransactions.slice(0, 8).map((tx) => {
+                  const Icon = tx.type === 'income' ? TrendingUp : getTxIcon(tx.categoryName, tx.type);
+                  const isIncome = tx.type === 'income';
                   return (
-                    <div key={goal.id} className="py-3 first:pt-0 last:pb-0 space-y-2">
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="font-semibold text-slate-900 dark:text-white truncate">
-                          {goal.name}
-                        </span>
-                        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 tabular-nums shrink-0">
-                          {percent}%
-                        </span>
+                    <div
+                      key={tx.id}
+                      onClick={() => onEditTransaction(tx)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onEditTransaction(tx);
+                        }
+                      }}
+                      className="flex items-center gap-3 rounded-xl px-2 py-2.5 transition hover:bg-slate-100/80 dark:hover:bg-white/[0.04] cursor-pointer group"
+                    >
+                      <div
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                          isIncome
+                            ? 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400'
+                            : 'bg-rose-500/12 text-rose-600 dark:text-rose-400'
+                        }`}
+                      >
+                        <Icon size={17} />
                       </div>
-
-                      <ProgressBar
-                        value={percent}
-                        tone={percent >= 100 ? 'teal' : 'emerald'}
-                        size="sm"
-                      />
-
-                      <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-                        <span className="font-mono tabular-nums truncate">
-                          {formatMoney(goal.savedAmount)} / {formatMoney(goal.targetAmount)}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs font-semibold text-slate-900 dark:text-white">
+                          {tx.description}
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums truncate">
+                          {formatDateUz(tx.date)}
+                          {tx.time ? `, ${tx.time}` : ''}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span
+                          className={`whitespace-nowrap text-[11px] font-bold tabular-nums ${
+                            isIncome
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-rose-600 dark:text-rose-400'
+                          }`}
+                        >
+                          {isIncome ? '+' : '-'}
+                          {formatMoney(tx.amount)}
                         </span>
+                        <Edit2 className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block ml-1" />
                         <button
                           type="button"
-                          onClick={() => onOpenGoalDeposit(goal)}
-                          className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold shrink-0 cursor-pointer"
+                          aria-label="Tranzaksiyani oʻchirish"
+                          title="Oʻchirish"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteTransaction(tx.id);
+                          }}
+                          className="w-6 h-6 rounded-lg items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 hidden sm:flex opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-all cursor-pointer"
                         >
-                          + Qoʻshish
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
@@ -726,48 +606,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             )}
           </Card>
-        </div>
+        </aside>
       </div>
 
-      {/* 8. Compact Subscription Banner */}
-      {onOpenPremiumModal && (
-        <section
-          aria-label="HISOBOT AI obuna"
-          className="px-4 py-3.5 sm:px-5 sm:py-4 rounded-2xl border border-slate-200/85 dark:border-white/[0.09] bg-[#081220] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3.5"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-amber-400/15 border border-amber-400/25 text-amber-300 flex items-center justify-center shrink-0">
-              <Crown className="w-4 h-4 fill-current" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-xs sm:text-sm font-bold text-white">
-                  {user?.isPremium
-                    ? `HISOBOT AI ${user.premiumPlan?.toUpperCase() || 'PRO'} faol`
-                    : 'HISOBOT AI Premium imkoniyatlari'}
-                </h3>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-amber-400 text-slate-950 whitespace-nowrap">
-                  {user?.isPremium ? 'FAOL' : '-17% YILLIK'}
+      {/* "Yana" More Tools Drawer */}
+      <Drawer
+        isOpen={moreDrawerOpen}
+        onClose={() => setMoreDrawerOpen(false)}
+        side="bottom"
+        title="Barcha moliya vositalari"
+      >
+        <div className="grid grid-cols-3 gap-2.5 pb-2">
+          {moreTools.map((tool) => {
+            const Icon = tool.icon;
+            return (
+              <button
+                key={tool.id}
+                type="button"
+                onClick={() => {
+                  setMoreDrawerOpen(false);
+                  onNavigateTab(tool.id);
+                }}
+                className="flex flex-col items-center justify-center gap-2 p-3 rounded-2xl border border-slate-200/80 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.03] hover:border-emerald-500/40 transition-colors cursor-pointer"
+              >
+                <span className="w-9 h-9 rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <Icon className="w-4 h-4" />
                 </span>
-              </div>
-              <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5 truncate">
-                {user?.isPremium
-                  ? 'Cheksiz hamyonlar, AI maslahatchi va oilaviy budjet vositalari ochiq.'
-                  : 'Cheksiz hamyonlar, chek skaneri, 3 oylik AI prognoz va Telegram sinxronizatsiyasi.'}
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onOpenPremiumModal}
-            className="inline-flex items-center justify-center gap-1.5 min-h-10 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-colors shrink-0 cursor-pointer whitespace-nowrap"
-          >
-            <span>{user?.isPremium ? 'Tarif tafsilotlari' : 'Obunani koʻrish'}</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </section>
-      )}
+                <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200 text-center leading-tight">
+                  {tool.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </Drawer>
     </div>
   );
 };

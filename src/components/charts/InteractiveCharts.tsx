@@ -71,7 +71,8 @@ export const CHART_PALETTE = {
 export const IncomeExpenseBarChart: React.FC<{
   data: MonthlyData[];
   height?: number;
-}> = ({ data, height = 250 }) => {
+  compact?: boolean;
+}> = ({ data, height = 250, compact = false }) => {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [chartMode, setChartMode] = useState<'both' | 'net'>('both');
 
@@ -89,61 +90,83 @@ export const IncomeExpenseBarChart: React.FC<{
     1000000
   );
 
+  const formatCompactTick = (val: number) => {
+    if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(val >= 10_000_000 ? 0 : 1).replace(/\.0$/, '')}M`;
+    if (val >= 1_000) return `${Math.round(val / 1_000)}K`;
+    return String(val);
+  };
+
   return (
     <div className="w-full select-none">
       {/* Legend & Mode Switcher */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-5 text-xs">
+      <div className={`flex flex-wrap items-center justify-between gap-3 ${compact ? 'mb-3' : 'mb-5'} text-xs`}>
         <div className="flex flex-wrap items-center gap-4">
           <span className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
-            <span className="w-3 h-3 rounded-sm bg-gradient-to-r from-emerald-500 to-cyan-400 inline-block" />
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />
             <span>Daromad</span>
           </span>
           <span className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
-            <span className="w-3 h-3 rounded-sm bg-gradient-to-r from-rose-600 to-rose-400 inline-block" />
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" />
             <span>Xarajat</span>
           </span>
-          <span className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
-            <span className="w-3 h-3 rounded-sm bg-gradient-to-r from-emerald-500 to-blue-500 inline-block" />
-            <span>Sof tejash</span>
-          </span>
+          {!compact && (
+            <span className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" />
+              <span>Sof tejash</span>
+            </span>
+          )}
         </div>
 
-        <div className="flex items-center p-1 bg-slate-100 dark:bg-white/[0.06] rounded-xl text-[11px] font-semibold border border-slate-200/70 dark:border-white/[0.08]">
-          <button
-            type="button"
-            onClick={() => setChartMode('both')}
-            className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
-              chartMode === 'both'
-                ? 'bg-white dark:bg-[#111B27] text-slate-900 dark:text-white shadow-xs'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            Kirim va Chiqim
-          </button>
-          <button
-            type="button"
-            onClick={() => setChartMode('net')}
-            className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
-              chartMode === 'net'
-                ? 'bg-white dark:bg-[#111B27] text-slate-900 dark:text-white shadow-xs'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            Sof jamgʻarma
-          </button>
-        </div>
+        {!compact && (
+          <div className="flex items-center p-1 bg-slate-100 dark:bg-white/[0.06] rounded-xl text-[11px] font-semibold border border-slate-200/70 dark:border-white/[0.08]">
+            <button
+              type="button"
+              onClick={() => setChartMode('both')}
+              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                chartMode === 'both'
+                  ? 'bg-white dark:bg-[#111B27] text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Kirim va Chiqim
+            </button>
+            <button
+              type="button"
+              onClick={() => setChartMode('net')}
+              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                chartMode === 'net'
+                  ? 'bg-white dark:bg-[#111B27] text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Sof jamgʻarma
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Bar Chart Container */}
-      <div
-        className="relative flex items-end justify-between gap-2 sm:gap-4 pt-10 pb-8 border-b border-slate-200/80 dark:border-white/[0.08]"
-        style={{ height: `${height}px` }}
-      >
-        <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-30">
-          <div className="border-b border-dashed border-slate-300 dark:border-slate-700 w-full" />
-          <div className="border-b border-dashed border-slate-300 dark:border-slate-700 w-full" />
-          <div className="border-b border-dashed border-slate-300 dark:border-slate-700 w-full" />
+      <div className="flex items-stretch gap-2">
+        <div
+          className="hidden sm:flex flex-col justify-between pt-8 pb-8 pr-1 text-[10px] font-mono tabular-nums text-slate-400 dark:text-slate-500 shrink-0 select-none text-right min-w-[28px]"
+          style={{ height: `${height}px` }}
+          aria-hidden="true"
+        >
+          <span>{formatCompactTick(maxVal)}</span>
+          <span>{formatCompactTick(Math.round(maxVal * 0.66))}</span>
+          <span>{formatCompactTick(Math.round(maxVal * 0.33))}</span>
+          <span>0</span>
         </div>
+
+        <div
+          className="relative flex-1 flex items-end justify-between gap-2 sm:gap-4 pt-8 pb-8 border-b border-slate-200/80 dark:border-white/[0.08]"
+          style={{ height: `${height}px` }}
+        >
+          <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-30 pt-8 pb-8">
+            <div className="border-b border-dashed border-slate-300 dark:border-slate-700 w-full" />
+            <div className="border-b border-dashed border-slate-300 dark:border-slate-700 w-full" />
+            <div className="border-b border-dashed border-slate-300 dark:border-slate-700 w-full" />
+          </div>
 
         {data.map((item, idx) => {
           const maxBarH = height - 64;
@@ -234,6 +257,7 @@ export const IncomeExpenseBarChart: React.FC<{
             </div>
           );
         })}
+        </div>
       </div>
     </div>
   );

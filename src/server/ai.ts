@@ -426,17 +426,100 @@ export async function answerFinancialQuestionAI(
   const q = userQuery.toLowerCase();
   const fmt = (n: number) => new Intl.NumberFormat('uz-UZ').format(Math.round(n)) + ' soʻm';
 
-  if (q.includes('qancha pul sarfladim') || q.includes('xarajatim qancha') || q.includes('sarf')) {
-    return `Bu oyda jami xarajatlaringiz **${fmt(userStats.thisMonthExpense)}** ni tashkil etdi. Shulardan eng katta ulush "${userStats.topExpenseCategories[0]?.name || 'Oziq-ovqat'}" toifasiga toʻgʻri kelmoqda (${fmt(userStats.topExpenseCategories[0]?.amount || 0)}).`;
+  if (q.includes('tahlil') || q.includes('qancha pul sarfladim') || q.includes('xarajatim qancha')) {
+    const topLines = userStats.topExpenseCategories
+      .slice(0, 3)
+      .map((c, idx) => `${idx + 1}. **${c.name}**: ${fmt(c.amount)} (${c.percentage}%)`)
+      .join('\n');
+    const diff = userStats.lastMonthExpense - userStats.thisMonthExpense;
+    const trendNote =
+      userStats.lastMonthExpense > 0
+        ? diff >= 0
+          ? `Oʻtgan oyga nisbatan **${fmt(diff)}** kamroq sarfladingiz.`
+          : `Oʻtgan oyga nisbatan **${fmt(Math.abs(diff))}** koʻproq sarfladingiz.`
+        : '';
+
+    return [
+      `Bu oygi moliyaviy tahlil (${userStats.fullName}):`,
+      `• Jami daromad: **${fmt(userStats.thisMonthIncome)}**`,
+      `• Jami xarajat: **${fmt(userStats.thisMonthExpense)}**`,
+      `• Sof jamgʻarma: **${fmt(userStats.netSavings)}**`,
+      trendNote ? `• Dinamika: ${trendNote}` : '',
+      topLines ? `\nAsosiy xarajat toifalari:\n${topLines}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
-  if (q.includes('nimaga ketmoqda') || q.includes('qayerga ketmoqda') || q.includes('eng koʻp') || q.includes('eng kop')) {
+  if (q.includes('nimaga ketmoqda') || q.includes('qayerga ketmoqda') || q.includes('eng koʻp') || q.includes('ko‘p pul') || q.includes("ko'p pul")) {
     if (userStats.topExpenseCategories.length > 0) {
       const top = userStats.topExpenseCategories[0];
       const second = userStats.topExpenseCategories[1];
-      return `Sizning eng koʻp pulingiz **${top.name}** toifasiga ketmoqda (${fmt(top.amount)}, umumiy xarajatning ${top.percentage}% qismi). ${second ? `Ikkinchi oʻrinda esa ${second.name} (${fmt(second.amount)}).` : ''}`;
+      const third = userStats.topExpenseCategories[2];
+      return [
+        `Sizning eng koʻp pulingiz **${top.name}** toifasiga ketmoqda: **${fmt(top.amount)}** (jami xarajatning ${top.percentage}% qismi).`,
+        second ? `• 2-oʻrin: **${second.name}** — ${fmt(second.amount)} (${second.percentage}%)` : '',
+        third ? `• 3-oʻrin: **${third.name}** — ${fmt(third.amount)} (${third.percentage}%)` : '',
+        `\nTavsiya: ${top.name} boʻyicha sarfni 15% ga qisqartirsangiz, oyiga **${fmt(top.amount * 0.15)}** tejashingiz mumkin.`,
+      ]
+        .filter(Boolean)
+        .join('\n');
     }
     return `Hozircha xarajat toifalari boʻyicha yetarli maʼlumot yoʻq.`;
+  }
+
+  if (q.includes('budjet') || q.includes('reja')) {
+    const baseIncome = userStats.thisMonthIncome > 0 ? userStats.thisMonthIncome : userStats.thisMonthExpense * 1.2;
+    const needs = Math.round(baseIncome * 0.5);
+    const wants = Math.round(baseIncome * 0.3);
+    const savings = Math.round(baseIncome * 0.2);
+    const budgetStatus =
+      userStats.budgets.length > 0
+        ? '\nJoriy budjet limitlaringiz:\n' +
+          userStats.budgets
+            .slice(0, 4)
+            .map((b) => `• **${b.category}**: ${fmt(b.spent)} / ${fmt(b.limit)} (${b.percent}%)`)
+            .join('\n')
+        : '';
+
+    return [
+      `Sizning daromadingiz (${fmt(userStats.thisMonthIncome)}) asosida optimal **50/30/20 budjet rejasi**:`,
+      `• Zaruriy ehtiyojlar (50%): **${fmt(needs)}**`,
+      `• Shaxsiy xohishlar (30%): **${fmt(wants)}**`,
+      `• Jamgʻarma va maqsadlar (20%): **${fmt(savings)}**`,
+      budgetStatus,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  if (q.includes('maqsad')) {
+    if (userStats.goals.length === 0) {
+      return `Hozircha faol moliyaviy maqsadlaringiz kiritilmagan. «Maqsadlar» boʻlimida yangi jamgʻarma maqsadini yarating — men oyiga qancha ajratish kerakligini hisoblab beraman.`;
+    }
+    const goalLines = userStats.goals
+      .map((g) => `• **${g.name}**: ${fmt(g.saved)} / ${fmt(g.target)} (**${g.percent}%**)`)
+      .join('\n');
+    return `Sizning faol moliyaviy maqsadlaringiz (${userStats.goals.length} ta):\n${goalLines}\n\nJoriy oylik sof jamgʻarmangiz (${fmt(Math.max(0, userStats.netSavings))}) surʼati bilan maqsadlaringizga muntazam yaqinlashmoqdasiz.`;
+  }
+
+  if (q.includes('prognoz') || q.includes('kelgusi oy') || q.includes('bashorat')) {
+    const projectedExpense =
+      userStats.lastMonthExpense > 0
+        ? Math.round((userStats.thisMonthExpense + userStats.lastMonthExpense) / 2)
+        : userStats.thisMonthExpense;
+    const expectedBalance = userStats.totalBalance + (userStats.thisMonthIncome - projectedExpense);
+    return [
+      `Kelgusi oy moliyaviy prognozi:`,
+      `• Kutilayotgan xarajatlar: **${fmt(projectedExpense)}**`,
+      `• Kutilayotgan daromad: **${fmt(userStats.thisMonthIncome)}**`,
+      `• Oy yakunidagi taxminiy balans: **${fmt(expectedBalance)}**`,
+      userStats.topExpenseCategories[0]
+        ? `\nEʼtibor bering: **${userStats.topExpenseCategories[0].name}** eng katta xavf toifasi (${userStats.topExpenseCategories[0].percentage}%).`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   if (q.includes('tejadim') || q.includes("o'tgan oy") || q.includes('oʻtgan oy') || q.includes('solishtir')) {

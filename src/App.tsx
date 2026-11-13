@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext.tsx';
 import { Sidebar, NavTab } from './components/layout/Sidebar.tsx';
-import { Header } from './components/layout/Header.tsx';
+import { Header, DashboardPeriod } from './components/layout/Header.tsx';
 import { MobileBottomNav } from './components/layout/MobileBottomNav.tsx';
 import { DashboardView } from './components/views/DashboardView.tsx';
 import { IncomeView } from './components/views/IncomeView.tsx';
@@ -65,6 +65,7 @@ function MainApp() {
   const toast = useToast();
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
+  const [selectedPeriod, setSelectedPeriod] = useState<DashboardPeriod>('this_month');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [quickAddSheetOpen, setQuickAddSheetOpen] = useState(false);
 
@@ -110,7 +111,7 @@ function MainApp() {
       setDataLoading(true);
       setDataError(null);
       const [sumRes, txRes, catRes, bdgRes, goalRes, debtRes] = await Promise.all([
-        api.getSummary({ period: 'this_month' }),
+        api.getSummary({ period: selectedPeriod }),
         api.getTransactions(),
         api.getCategories(),
         api.getBudgets(),
@@ -130,7 +131,7 @@ function MainApp() {
     } finally {
       setDataLoading(false);
     }
-  }, [user]);
+  }, [user, selectedPeriod]);
 
   useEffect(() => {
     if (user) {
@@ -281,7 +282,14 @@ function MainApp() {
   }
 
   return (
-    <div className="flex h-[100dvh] bg-[#F4F7F8] dark:bg-[#081220] text-[#0F172A] dark:text-slate-100 overflow-hidden font-sans">
+    <div className="relative flex h-[100dvh] bg-[#F4F7F8] dark:bg-[#061411] text-[#0F172A] dark:text-white overflow-hidden font-sans">
+      {/* Subtle Emerald / Teal Ambient Glow Layers (Dark mode) */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden hidden dark:block" aria-hidden="true">
+        <div className="absolute -left-40 -top-40 h-[460px] w-[460px] rounded-full bg-emerald-500/[0.11] blur-[130px]" />
+        <div className="absolute right-[-140px] top-[20%] h-[400px] w-[400px] rounded-full bg-teal-500/[0.08] blur-[130px]" />
+        <div className="absolute bottom-[-180px] left-[30%] h-[380px] w-[380px] rounded-full bg-emerald-400/[0.06] blur-[140px]" />
+      </div>
+
       {/* Desktop & Mobile Drawer Sidebar */}
       <Sidebar
         currentTab={currentTab}
@@ -293,23 +301,24 @@ function MainApp() {
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Header
-          currentTab={currentTab}
-          onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
-          onOpenTransactionModal={(type) => {
-            setEditingTx(null);
-            setTxModalType(type);
-            setTxModalOpen(true);
-          }}
-          onOpenVoiceModal={() => setVoiceModalOpen(true)}
-          onNavigateTab={setCurrentTab}
-          onOpenAuthModal={() => setAuthModalOpen(true)}
-        />
-
+      <div className="relative flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* View Content Viewport */}
-        <main className="flex-1 min-w-0 max-w-full overflow-y-auto overflow-x-hidden px-3.5 py-4 sm:p-6 lg:p-8 pb-24 lg:pb-8">
-          <div className="w-full min-w-0 max-w-7xl mx-auto">
+        <main className="flex-1 min-w-0 max-w-full overflow-y-auto overflow-x-hidden px-3 pt-3 pb-24 sm:px-5 lg:px-7 lg:pb-8">
+          <div className="w-full min-w-0 max-w-[1600px] mx-auto">
+            <Header
+              currentTab={currentTab}
+              selectedPeriod={selectedPeriod}
+              onSelectPeriod={setSelectedPeriod}
+              transactions={transactions}
+              onEditTransaction={(tx) => {
+                setEditingTx(tx);
+                setTxModalType(tx.type);
+                setTxModalOpen(true);
+              }}
+              onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+              onNavigateTab={setCurrentTab}
+              onOpenAuthModal={() => setAuthModalOpen(true)}
+            />
             {dataError && (
               <div className="mb-4 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between gap-3">
                 <span>{dataError}</span>
@@ -329,8 +338,13 @@ function MainApp() {
                 recentTransactions={transactions}
                 goals={goals}
                 loading={dataLoading && !summary}
+                selectedPeriod={selectedPeriod}
+                onSelectPeriod={setSelectedPeriod}
                 onOpenVoiceModal={() => setVoiceModalOpen(true)}
-                onOpenPremiumModal={() => setPremiumModalOpen(true)}
+                onOpenGoalModal={() => {
+                  setEditingGoal(null);
+                  setGoalModalOpen(true);
+                }}
                 onOpenTransactionModal={(type) => {
                   setEditingTx(null);
                   setTxModalType(type);
@@ -393,6 +407,7 @@ function MainApp() {
                   refreshAllData();
                 }}
                 onOpenVoiceModal={() => setVoiceModalOpen(true)}
+                onOpenPremiumModal={() => setPremiumModalOpen(true)}
               />
             )}
 
