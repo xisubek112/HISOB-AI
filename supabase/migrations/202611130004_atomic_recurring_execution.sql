@@ -55,6 +55,9 @@ begin
   from public.app_recurring_executions
   where owner_user_id = p_user_id and execution_id = p_execution_id;
   if found then
+    if v_execution.recurring_id <> p_recurring_id then
+      raise exception 'Execution id was already used for another schedule' using errcode = '23505';
+    end if;
     return v_execution.transaction_payload;
   end if;
 
