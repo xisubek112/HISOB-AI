@@ -8,6 +8,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import assert from 'node:assert/strict';
 
 type JsonRecord = Record<string, any>;
 
@@ -205,7 +206,65 @@ function validateRelations(users: JsonRecord[], sessions: JsonRecord[], records:
   }
 }
 
+function runSelfTests(): void {
+  const fixture = {
+    users: {
+      user_test: {
+        id: 'user_test',
+        email: 'Test@Example.com',
+        fullName: 'Test User',
+        passwordHash: 'test-hash',
+        salt: 'test-salt',
+      },
+    },
+    sessions: {
+      test_token: 'user_test',
+      demo_token: 'user_test',
+    },
+    familyGroups: {
+      family_test: { id: 'family_test', ownerId: 'user_test', name: 'Test family' },
+    },
+    familyMembers: {
+      family_test: [{ id: 'member_test', familyId: 'family_test', userId: 'user_test' }],
+    },
+    transactions: {
+      user_test: [{ id: 'transaction_test', userId: 'user_test', amount: 100 }],
+    },
+    telegramConnections: {
+      user_test: { userId: 'user_test', isConnected: false },
+    },
+  };
+
+  const users = buildUserRows(fixture.users);
+  const sessions = buildSessionRows(fixture.sessions);
+  const records = buildDataRows(fixture);
+  validateRelations(users, sessions, records);
+
+  assert.equal(users.length, 1);
+  assert.equal(users[0].password_hash, 'test-hash');
+  assert.equal('passwordHash' in users[0].profile, false);
+  assert.equal(sessions.length, 1, 'known demo token must be skipped');
+  assert.equal(sessions[0].token_hash, sha256('test_token'));
+  assert.equal(records.length, 4);
+  assert.equal(records.find((row) => row.collection === 'familyMembers')?.owner_user_id, 'user_test');
+
+  assert.throws(() => validateRelations(users, [{ user_id: 'missing_user' }], records), /missing user/);
+  assert.throws(() => validateRelations(users, sessions, [{ ...records[0], owner_user_id: 'missing_user' }]), /missing owner/);
+
+  const duplicateUsers = buildUserRows({
+    first: { email: 'same@example.com', passwordHash: 'hash', salt: 'salt' },
+    second: { email: ' SAME@example.com ', passwordHash: 'hash', salt: 'salt' },
+  });
+  assert.throws(() => validateRelations(duplicateUsers, [], []), /Duplicate normalized email/);
+
+  console.log('Migration utility self-tests passed.');
+}
+
 async function main() {
+  if (process.argv.includes('--self-test')) {
+    runSelfTests();
+    return;
+  }
   if (apply && !process.argv.includes('--confirm-hisobot-import')) {
     throw new Error('Write mode requires both --apply and --confirm-hisobot-import');
   }
