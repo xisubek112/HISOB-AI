@@ -211,6 +211,37 @@ export async function saveUserData(record: StoredAppData): Promise<void> {
   );
 }
 
+export interface AtomicRecurringExecutionInput {
+  userId: string;
+  recurringId: string;
+  executionId: string;
+  executedAt?: string;
+}
+
+/** Execute a due recurring schedule atomically, including wallet and ledger updates. */
+export async function executeRecurringTransactionAtomically(
+  input: AtomicRecurringExecutionInput,
+): Promise<Record<string, unknown>> {
+  requireNonEmpty(input.userId, 'userId');
+  requireNonEmpty(input.recurringId, 'recurringId');
+  requireNonEmpty(input.executionId, 'executionId');
+  if (input.executedAt && Number.isNaN(Date.parse(input.executedAt))) {
+    throw new SupabaseStorageError('executedAt must be a valid timestamp');
+  }
+  return request<Record<string, unknown>>(
+    'rpc/hisobot_execute_recurring_transaction',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        p_user_id: input.userId,
+        p_recurring_id: input.recurringId,
+        p_execution_id: input.executionId,
+        p_executed_at: input.executedAt ?? new Date().toISOString(),
+      }),
+    },
+  );
+}
+
 export interface AtomicFinancialOperationInput {
   userId: string;
   operationId: string;
