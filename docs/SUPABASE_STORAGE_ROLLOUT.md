@@ -107,3 +107,21 @@ Neither is wired to the existing Express route yet. Do not call this RPC until
 the second SQL migration has been applied in the intended Supabase project.
 The existing JSON-backed wallet route remains active until route migration and
 staging integration tests are complete.
+
+
+## Atomic goal deposits and debt payments
+
+The migration `supabase/migrations/202611130003_atomic_financial_operations.sql`
+creates a private operation ledger and the
+`hisobot_apply_financial_operation` RPC. Goal deposits and debt payments lock
+the target record, validate the amount, update the JSONB record, and persist an
+idempotency result in one database transaction. Repeating the same operation ID
+with the same inputs returns the stored result; reusing it with different inputs
+is rejected. Concurrent retries are rechecked after the target row lock.
+
+Server methods are available as `depositToGoalAtomically` and
+`payDebtAtomically` in `src/server/supabase-repository.ts`. They are not yet
+wired into the current API routes. The caller must generate and retain a unique
+operation ID for each user action and reuse that same ID only for retries of
+that action. Do not apply this migration until the earlier storage and wallet
+migrations have been reviewed and applied in order in a non-production project.
