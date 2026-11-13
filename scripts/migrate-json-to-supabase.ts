@@ -86,10 +86,12 @@ function buildUserRows(users: JsonRecord): JsonRecord[] {
 }
 
 function buildSessionRows(sessions: JsonRecord): JsonRecord[] {
-  return Object.entries(sessions).map(([token, userId]) => ({
-    token_hash: sha256(token),
-    user_id: String(userId),
-  }));
+  return Object.entries(sessions)
+    .filter(([token]) => token !== 'demo_token')
+    .map(([token, userId]) => ({
+      token_hash: sha256(token),
+      user_id: String(userId),
+    }));
 }
 
 function buildDataRows(data: JsonRecord): JsonRecord[] {
@@ -173,6 +175,9 @@ function buildDataRows(data: JsonRecord): JsonRecord[] {
 }
 
 async function main() {
+  if (apply && !process.argv.includes('--confirm-hisobot-import')) {
+    throw new Error('Write mode requires both --apply and --confirm-hisobot-import');
+  }
   const raw = await fs.readFile(inputPath, 'utf8');
   const legacy = JSON.parse(raw) as JsonRecord;
   assertObject(legacy, 'root');
