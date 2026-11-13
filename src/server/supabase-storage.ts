@@ -211,6 +211,28 @@ export async function saveUserData(record: StoredAppData): Promise<void> {
   );
 }
 
+/** Upsert a bounded batch in one PostgREST request. */
+export async function saveManyUserData(records: StoredAppData[]): Promise<void> {
+  if (records.length === 0) return;
+  if (records.length > 500) {
+    throw new SupabaseStorageError('A storage batch cannot exceed 500 records');
+  }
+  for (const record of records) {
+    requireNonEmpty(record.owner_user_id, 'record.owner_user_id');
+    requireCollection(record.collection);
+    requireNonEmpty(record.scope_key, 'record.scope_key');
+    requireNonEmpty(record.record_key, 'record.record_key');
+  }
+  await request<StoredAppData[]>(
+    'app_data',
+    {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(records),
+    },
+  );
+}
+
 export async function deleteUserData(
   userId: string,
   collection: string,
