@@ -72,7 +72,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const savingsRate = summary?.savingsRate ?? 0;
 
   return (
-    <div className="relative space-y-7 pb-4">
+    <div className="relative space-y-5 sm:space-y-7 pb-6 hai-dashboard">
       {/* Ambient background blur orbs for Glassmorphism depth */}
       <div className="pointer-events-none absolute -top-10 -left-10 w-96 h-96 bg-violet-500/10 dark:bg-violet-600/15 rounded-full blur-3xl -z-10" />
       <div className="pointer-events-none absolute top-72 -right-10 w-96 h-96 bg-cyan-500/10 dark:bg-cyan-600/15 rounded-full blur-3xl -z-10" />
@@ -85,7 +85,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           className={`p-5 rounded-3xl border transition-all duration-300 cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative overflow-hidden group shadow-xl backdrop-blur-xl ${
             user?.isPremium
               ? 'bg-gradient-to-r from-amber-500/15 via-yellow-500/10 to-amber-500/15 border-amber-400/40 hover:border-amber-400/70 hover:shadow-amber-500/10 dark:bg-amber-950/20'
-              : 'bg-gradient-to-r from-indigo-950/30 via-slate-900/60 to-purple-950/30 border-white/20 hover:border-violet-500/50 hover:shadow-violet-500/10 dark:bg-slate-900/70'
+              : 'bg-gradient-to-br from-[#073B35] via-[#0B5B50] to-[#087E70] border-emerald-300/20 hover:border-emerald-300/50 hover:shadow-emerald-500/20 dark:from-[#073B35] dark:via-[#0B5B50] dark:to-[#087E70]'
           }`}
         >
           {/* Subtle light sweep reflection */}
@@ -96,7 +96,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-md backdrop-blur-md ${
                 user?.isPremium
                   ? 'bg-gradient-to-br from-amber-400 to-yellow-500 text-amber-950 shadow-amber-500/30'
-                  : 'bg-gradient-to-br from-violet-600 to-blue-600 text-white shadow-violet-500/30 ring-1 ring-white/20'
+                  : 'bg-white/15 text-white shadow-emerald-900/20 ring-1 ring-white/20'
               }`}
             >
               <Crown className="w-5 h-5 fill-current" />
@@ -112,7 +112,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wide shadow-xs ${
                     user?.isPremium
                       ? 'bg-gradient-to-r from-amber-400 to-yellow-400 text-amber-950 font-bold'
-                      : 'bg-gradient-to-r from-violet-600 to-blue-600 text-white'
+                      : 'bg-emerald-300 text-emerald-950'
                   }`}
                 >
                   {user?.isPremium ? 'PRO STATUS' : 'CHEGIRMA -17%'}
@@ -125,7 +125,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-bold text-violet-600 dark:text-violet-400 group-hover:translate-x-1 transition-transform shrink-0 relative z-10">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-100 group-hover:translate-x-1 transition-transform shrink-0 relative z-10">
             <span>{user?.isPremium ? 'Tarif tafsilotlari' : 'Obunani faollashtirish'}</span>
             <ArrowRight className="w-4 h-4" />
           </div>
@@ -133,13 +133,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
 
       {/* 4 Metric Cards with Cohesive Glassmorphism */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         {/* Total Balance Card */}
-        <div className="relative overflow-hidden p-6 rounded-3xl backdrop-blur-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-white/10 shadow-lg hover:shadow-2xl hover:-translate-y-0.5 transition-all duration-300 group flex flex-col justify-between">
-          <div className="absolute top-0 right-0 w-28 h-28 bg-gradient-to-br from-blue-500/10 to-indigo-500/0 rounded-full blur-xl group-hover:from-blue-500/20 transition-all pointer-events-none" />
+        <div className="relative overflow-hidden p-5 sm:p-6 rounded-[24px] bg-white dark:bg-[#111B27] border border-slate-200/70 dark:border-white/10 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:shadow-[0_16px_36px_rgba(15,23,42,0.10)] hover:-translate-y-0.5 transition-all duration-300 group flex flex-col justify-between">
+          <div className="absolute top-0 right-0 w-28 h-28 bg-gradient-to-br from-emerald-500/10 to-teal-500/0 rounded-full blur-xl group-hover:from-blue-500/20 transition-all pointer-events-none" />
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs mb-4">
             <span className="font-semibold text-slate-600 dark:text-slate-300">Jami sof balans</span>
-            <div className="w-9 h-9 rounded-2xl bg-blue-500/10 dark:bg-blue-400/10 text-blue-600 dark:text-blue-400 flex items-center justify-center backdrop-blur-md border border-blue-500/20 shadow-xs">
+            <div className="w-9 h-9 rounded-2xl bg-emerald-500/10 dark:bg-emerald-400/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center backdrop-blur-md border border-blue-500/20 shadow-xs">
               <Wallet className="w-4 h-4" />
             </div>
           </div>
@@ -148,14 +148,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {formatMoney(totalBalance)}
             </div>
             <div className="text-[11px] text-slate-400 dark:text-slate-400 mt-1.5 flex items-center gap-1.5">
-              <span className="inline-block w-2 h-2 rounded-full bg-blue-500 shadow-xs shadow-blue-500/50" />
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shadow-xs shadow-emerald-500/50" />
               <span>Barcha hisob va kartalar boʻyicha</span>
             </div>
           </div>
         </div>
 
         {/* Total Income Card */}
-        <div className="relative overflow-hidden p-6 rounded-3xl backdrop-blur-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-white/10 shadow-lg hover:shadow-2xl hover:-translate-y-0.5 transition-all duration-300 group flex flex-col justify-between">
+        <div className="relative overflow-hidden p-5 sm:p-6 rounded-[24px] bg-white dark:bg-[#111B27] border border-slate-200/70 dark:border-white/10 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:shadow-[0_16px_36px_rgba(15,23,42,0.10)] hover:-translate-y-0.5 transition-all duration-300 group flex flex-col justify-between">
           <div className="absolute top-0 right-0 w-28 h-28 bg-gradient-to-br from-emerald-500/10 to-cyan-500/0 rounded-full blur-xl group-hover:from-emerald-500/20 transition-all pointer-events-none" />
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs mb-4">
             <span className="font-semibold text-slate-600 dark:text-slate-300">Joriy oydagi daromad</span>
@@ -175,7 +175,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Total Expense Card */}
-        <div className="relative overflow-hidden p-6 rounded-3xl backdrop-blur-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-white/10 shadow-lg hover:shadow-2xl hover:-translate-y-0.5 transition-all duration-300 group flex flex-col justify-between">
+        <div className="relative overflow-hidden p-5 sm:p-6 rounded-[24px] bg-white dark:bg-[#111B27] border border-slate-200/70 dark:border-white/10 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:shadow-[0_16px_36px_rgba(15,23,42,0.10)] hover:-translate-y-0.5 transition-all duration-300 group flex flex-col justify-between">
           <div className="absolute top-0 right-0 w-28 h-28 bg-gradient-to-br from-rose-500/10 to-violet-500/0 rounded-full blur-xl group-hover:from-rose-500/20 transition-all pointer-events-none" />
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs mb-4">
             <span className="font-semibold text-slate-600 dark:text-slate-300">Joriy oydagi xarajat</span>
@@ -195,11 +195,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Net Savings & Rate Card */}
-        <div className="relative overflow-hidden p-6 rounded-3xl backdrop-blur-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-white/10 shadow-lg hover:shadow-2xl hover:-translate-y-0.5 transition-all duration-300 group flex flex-col justify-between">
-          <div className="absolute top-0 right-0 w-28 h-28 bg-gradient-to-br from-violet-500/10 to-blue-500/0 rounded-full blur-xl group-hover:from-violet-500/20 transition-all pointer-events-none" />
+        <div className="relative overflow-hidden p-5 sm:p-6 rounded-[24px] bg-white dark:bg-[#111B27] border border-slate-200/70 dark:border-white/10 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:shadow-[0_16px_36px_rgba(15,23,42,0.10)] hover:-translate-y-0.5 transition-all duration-300 group flex flex-col justify-between">
+          <div className="absolute top-0 right-0 w-28 h-28 bg-gradient-to-br from-teal-500/10 to-emerald-500/0 rounded-full blur-xl group-hover:from-violet-500/20 transition-all pointer-events-none" />
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs mb-4">
             <span className="font-semibold text-slate-600 dark:text-slate-300">Sof tejash (Jamgʻarma)</span>
-            <div className="w-9 h-9 rounded-2xl bg-violet-500/10 dark:bg-violet-400/10 text-violet-600 dark:text-violet-400 flex items-center justify-center backdrop-blur-md border border-violet-500/20 shadow-xs">
+            <div className="w-9 h-9 rounded-2xl bg-teal-500/10 dark:bg-teal-400/10 text-teal-600 dark:text-teal-400 flex items-center justify-center backdrop-blur-md border border-violet-500/20 shadow-xs">
               <PiggyBank className="w-4 h-4" />
             </div>
           </div>
@@ -218,7 +218,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* AI Assistant Quick Banner with Glassmorphic Gradient */}
-      <div className="relative overflow-hidden p-6 rounded-3xl backdrop-blur-2xl bg-gradient-to-r from-blue-600/90 via-indigo-600/90 to-violet-600/90 text-white border border-white/30 shadow-2xl shadow-indigo-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
+      <div className="relative overflow-hidden p-6 rounded-3xl backdrop-blur-2xl bg-gradient-to-r from-[#073B35] via-[#087E70] to-[#0E9F83] text-white border border-white/30 shadow-2xl shadow-emerald-900/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
         <div className="absolute -right-8 -bottom-8 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
         <div className="flex items-center gap-4 relative z-10">
           <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/30 shadow-inner">
@@ -229,7 +229,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span>HISOBOT AI: Tabiiy tilda kirim-chiqimlarni kiriting</span>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-blue-100 font-mono">Ovoz & Matn</span>
             </h3>
-            <p className="text-xs text-blue-100/90 mt-1">
+            <p className="text-xs text-emerald-50/90 mt-1">
               Masalan: «Bugun 150 ming soʻm ovqatga sarfladim» yoki «Ishdan 5 million oylik oldim»
             </p>
           </div>
@@ -253,7 +253,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
           <button
             onClick={() => onNavigateTab('ai')}
-            className="px-4 py-2.5 bg-white text-indigo-700 rounded-2xl text-xs font-extrabold hover:bg-blue-50 transition-all shadow-md whitespace-nowrap active:scale-95"
+            className="px-4 py-2.5 bg-white text-emerald-800 rounded-2xl text-xs font-extrabold hover:bg-blue-50 transition-all shadow-md whitespace-nowrap active:scale-95"
           >
             AI yordamchi
           </button>
@@ -305,7 +305,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
                 <button
                   onClick={() => onNavigateTab('reports')}
-                  className="text-xs font-bold text-violet-600 dark:text-violet-400 hover:underline px-2.5 py-1"
+                  className="text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:underline px-2.5 py-1"
                 >
                   Hisobotlar →
                 </button>
@@ -390,7 +390,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="relative overflow-hidden p-6 rounded-3xl backdrop-blur-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-white/10 shadow-xl transition-all duration-300">
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-violet-500/10 dark:bg-violet-400/10 text-violet-600 dark:text-violet-400 flex items-center justify-center border border-violet-500/20">
+              <div className="w-8 h-8 rounded-xl bg-teal-500/10 dark:bg-teal-400/10 text-teal-600 dark:text-teal-400 flex items-center justify-center border border-violet-500/20">
                 <Target className="w-4 h-4" />
               </div>
               <h2 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -399,7 +399,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <button
               onClick={() => onNavigateTab('goals')}
-              className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline"
+              className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:underline"
             >
               Barchasi ({goals.length})
             </button>
@@ -472,7 +472,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </button>
                 <button
                   onClick={() => onNavigateTab('expense')}
-                  className="text-xs font-bold text-violet-600 dark:text-violet-400 hover:underline px-2 py-1"
+                  className="text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:underline px-2 py-1"
                 >
                   Tarix →
                 </button>
