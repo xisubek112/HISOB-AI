@@ -1,0 +1,45 @@
+:root {
+  color-scheme: light;
+  --hai-brand: #10B981;
+  --hai-brand-hover: #059669;
+  --hai-teal: #06B6D4;
+  --hai-deep-navy: #081220;
+  --hai-slate: #111827;
+
+  --hai-bg: #F4F7F8;
+  --hai-surface: #FFFFFF;
+  --hai-surface-elevated: #FFFFFF;
+  --hai-text: #0F172A;
+  --hai-text-muted: #64748B;
+  --hai-border: #E2E8F0;
+
+  --hai-success: #10B981;
+  --hai-info: #3B82F6;
+  --hai-premium: #F59E0B;
+  --hai-danger: #EF4444;
+
+  --hai-radius-sm: 8px;
+  --hai-radius-md: 12px;
+  --hai-radius-lg: 16px;
+  --hai-radius-xl: 20px;
+  --hai-radius-2xl: 24px;
+
+  --hai-shadow-card: 0 8px 30px rgba(15, 23, 42, 0.05);
+  --hai-shadow-glow: 0 0 28px rgba(16, 185, 129, 0.16);
+  --hai-motion-fast: 140ms;
+  --hai-motion-standard: 220ms;
+  --hai-motion-slow: 320ms;
+  --hai-motion-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.dark {
+  color-scheme: dark;
+  --hai-bg: #081220;
+  --hai-surface: #0D1927;
+  --hai-surface-elevated: #111B27;
+  --hai-text: #F8FAFC;
+  --hai-text-muted: #94A3B8;
+  --hai-border: rgba(148, 163, 184, 0.16);
+  --hai-shadow-card: 0 12px 36px rgba(0, 0, 0, 0.22);
+  --hai-shadow-glow: 0 0 30px rgba(16, 185, 129, 0.12);
+}
