@@ -8,6 +8,19 @@
 
 type JsonObject = Record<string, unknown>;
 
+export const APP_DATA_COLLECTIONS = ['transactions', 'categories', 'budgets', 'goals', 'debts', 'notifications', 'wallets', 'walletTransfers', 'familyGroups', 'familyMembers', 'familyInvitations', 'subscriptions', 'recurringTransactions', 'recurringLogs', 'receipts', 'bankConnections', 'bankSyncLogs', 'telegramConnections'] as const;
+export type AppDataCollection = (typeof APP_DATA_COLLECTIONS)[number];
+
+function requireNonEmpty(value: string, name: string): string {
+  if (typeof value !== 'string' || !value.trim()) throw new SupabaseStorageError(name + ' must be a non-empty string');
+  return value.trim();
+}
+
+function requireCollection(value: string): AppDataCollection {
+  if (!(APP_DATA_COLLECTIONS as readonly string[]).includes(value)) throw new SupabaseStorageError('Unsupported app data collection');
+  return value as AppDataCollection;
+}
+
 export interface StoredUser {
   id: string;
   email: string;
@@ -27,7 +40,7 @@ export interface StoredSession {
 
 export interface StoredAppData {
   owner_user_id: string;
-  collection: string;
+  collection: AppDataCollection;
   scope_key: string;
   record_key: string;
   payload: JsonObject;
@@ -63,11 +76,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${config.baseUrl}/${path}`, {
     ...init,
     headers: {
-      apikey: config.serviceKey,
-      Authorization: `Bearer ${config.serviceKey}`,
+      ...init.headers,
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      ...init.headers,
+      // Authentication is last so callers cannot override service credentials.
+      apikey: config.serviceKey,
+      Authorization: `Bearer ${config.serviceKey}`,
     },
     signal: init.signal ?? AbortSignal.timeout(10000),
   });
@@ -98,6 +112,7 @@ export async function checkSupabaseStorage(): Promise<boolean> {
 }
 
 export async function findUserByEmail(email: string): Promise<StoredUser | null> {
+  email = requireNonEmpty(email, 'email').toLowerCase();
   const rows = await request<StoredUser[]>(
     `app_users?${query({ select: '*', email_normalized: `eq.${email.trim().toLowerCase()}`, limit: '1' })}`,
   );
@@ -105,6 +120,7 @@ export async function findUserByEmail(email: string): Promise<StoredUser | null>
 }
 
 export async function findUserById(userId: string): Promise<StoredUser | null> {
+  userId = requireNonEmpty(userId, 'userId');
   const rows = await request<StoredUser[]>(
     `app_users?${query({ select: '*', id: `eq.${userId}`, limit: '1' })}`,
   );
@@ -134,6 +150,7 @@ export async function saveSession(session: StoredSession): Promise<void> {
 }
 
 export async function findSession(tokenHash: string): Promise<StoredSession | null> {
+  tokenHash = requireNonEmpty(tokenHash, 'tokenHash');
   const rows = await request<StoredSession[]>(
     `app_sessions?${query({ select: '*', token_hash: `eq.${tokenHash}`, limit: '1' })}`,
   );
@@ -141,6 +158,7 @@ export async function findSession(tokenHash: string): Promise<StoredSession | nu
 }
 
 export async function deleteSession(tokenHash: string): Promise<void> {
+  tokenHash = requireNonEmpty(tokenHash, 'tokenHash');
   await request<void>(
     `app_sessions?${query({ token_hash: `eq.${tokenHash}` })}`,
     { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
@@ -148,6 +166,7 @@ export async function deleteSession(tokenHash: string): Promise<void> {
 }
 
 export async function deleteAllUserSessions(userId: string): Promise<void> {
+  userId = requireNonEmpty(userId, 'userId');
   await request<void>(
     `app_sessions?${query({ user_id: `eq.${userId}` })}`,
     { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
@@ -159,6 +178,8 @@ export async function listUserData(
   collection: string,
   scopeKey?: string,
 ): Promise<StoredAppData[]> {
+  userId = requireNonEmpty(userId, 'userId');
+  collection = requireCollection(collection);
   const filters: Record<string, string> = {
     select: '*',
     owner_user_id: `eq.${userId}`,
@@ -186,6 +207,10 @@ export async function deleteUserData(
   scopeKey: string,
   recordKey: string,
 ): Promise<void> {
+  userId = requireNonEmpty(userId, 'userId');
+  collection = requireCollection(collection);
+  scopeKey = requireNonEmpty(scopeKey, 'scopeKey');
+  recordKey = requireNonEmpty(recordKey, 'recordKey');
   await request<void>(
     `app_data?${query({
       owner_user_id: `eq.${userId}`,
