@@ -1,0 +1,656 @@
+{
+  "users": {
+    "usr_demo_hisobot_2026": {
+      "id": "usr_demo_hisobot_2026",
+      "email": "demo@hisobot.uz",
+      "fullName": "Anvar Qodirov",
+      "avatarUrl": "/src/assets/images/avatar_user_profile_1794280921902.jpg",
+      "currency": "UZS",
+      "language": "uz",
+      "theme": "light",
+      "monthlyBudget": 8500000,
+      "notificationPrefs": {
+        "budgetAlerts": true,
+        "debtReminders": true,
+        "goalMilestones": true,
+        "weeklySummary": true
+      },
+      "createdAt": "2026-10-01T08:00:00.000Z",
+      "passwordHash": "fc52aecc0254b55488144917a6430805830db34a55db185a3fa8dfc3621466dabfc0d7cefeb0566b74a3966e2c7f71e74650ef53fff502c6f9338a71902b4fcd",
+      "salt": "29ab72635a8c00e28b2a70e4c2824d47",
+      "familyGroupId": "fam_qodirovlar_2026",
+      "isPremium": true,
+      "premiumPlan": "business",
+      "premiumExpiresAt": "2026-12-11"
+    }
+  },
+  "sessions": {
+    "ab8c41ef49eac2da4e08272073dcee01d7e29c156800f0ed552af3f26d35e0fd": "usr_demo_hisobot_2026",
+    "da56ec6649ce37771abd0c8f35b39b2be623ba4baf2241f089a6350570105719": "usr_demo_hisobot_2026",
+    "fc17b630c4a80ce2515d29c4df54ad11c721e40696e05e11a58d6e01e2380b28": "usr_demo_hisobot_2026",
+    "demo_token": "usr_demo_hisobot_2026"
+  },
+  "transactions": {
+    "usr_demo_hisobot_2026": [
+      {
+        "type": "expense",
+        "amount": 10000,
+        "categoryId": "exp_other",
+        "categoryName": "Boshqa xarajatlar",
+        "date": "2026-11-11",
+        "time": "09:06",
+        "description": "Bugun 10 ming ishlatdim",
+        "paymentMethod": "card",
+        "notes": "AI yordamchi orqali kiritildi",
+        "id": "tx_d616ea06-7e32-432d-82ef-1f4fa76e875e",
+        "userId": "usr_demo_hisobot_2026",
+        "createdAt": "2026-11-11T04:06:25.301Z"
+      },
+      {
+        "type": "expense",
+        "amount": 150000,
+        "categoryId": "exp_food",
+        "categoryName": "Oziq-ovqat va kafe",
+        "date": "2026-11-11",
+        "time": "09:05",
+        "description": "Bugun 150 ming soʻm ovqatga sarfladim.",
+        "paymentMethod": "card",
+        "notes": "AI yordamchi orqali kiritildi",
+        "id": "tx_5c146106-554b-4a63-88a8-81c339ff3801",
+        "userId": "usr_demo_hisobot_2026",
+        "createdAt": "2026-11-11T04:05:57.661Z"
+      },
+      {
+        "id": "tx_seed_7",
+        "userId": "usr_demo_hisobot_2026",
+        "type": "expense",
+        "amount": 150000,
+        "categoryId": "exp_food",
+        "categoryName": "Oziq-ovqat va kafe",
+        "date": "2026-11-10",
+        "time": "13:00",
+        "description": "Kollektiv bilan tushlik (Milliy taomlar)",
+        "paymentMethod": "cash",
+        "notes": "Choyxona tushligi",
+        "createdAt": "2026-11-10T03:33:59.243Z"
+      },
+      {
+        "type": "expense",
+        "amount": 45000,
+        "categoryName": "Transport va yoqilgʻi",
+        "description": "Uzum Bank (Online banking) orqali toʻlov: Yandex Taxi",
+        "paymentMethod": "card",
+        "date": "2026-11-10",
+        "categoryId": "exp_food",
+        "time": "04:11",
+        "notes": "Uzum Bank (Online banking) sinxronizatsiyasi orqali import qilindi",
+        "id": "tx_cceee008-4135-42dc-8683-76f3e10676fa",
+        "userId": "usr_demo_hisobot_2026",
+        "createdAt": "2026-11-10T04:11:49.064Z"
+      },
+      {
+        "type": "expense",
+        "amount": 85000,
+        "categoryName": "Oziq-ovqat va kafe",
+        "description": "Uzum Bank (Online banking) orqali toʻlov: Supermarket",
+        "paymentMethod": "card",
+        "date": "2026-11-10",
+        "categoryId": "exp_food",
+        "time": "04:11",
+        "notes": "Uzum Bank (Online banking) sinxronizatsiyasi orqali import qilindi",
+        "id": "tx_87ec5a34-3652-4cad-a175-885199f8baad",
+        "userId": "usr_demo_hisobot_2026",
+        "createdAt": "2026-11-10T04:11:49.047Z"
+      },
+      {
+        "id": "tx_seed_6",
+        "userId": "usr_demo_hisobot_2026",
+        "type": "expense",
+        "amount": 850000,
+        "categoryId": "exp_shopping",
+        "categoryName": "Xaridlar va kiyim",
+        "date": "2026-11-08",
+        "time": "16:00",
+        "description": "Qishki mavsum uchun kiyim-kechak xaridi",
+        "paymentMethod": "card",
+        "notes": "Savdo markazidan",
+        "createdAt": "2026-11-10T03:33:59.243Z"
+      },
+      {
+        "id": "tx_seed_5",
+        "userId": "usr_demo_hisobot_2026",
+        "type": "expense",
+        "amount": 350000,
+        "categoryId": "exp_bills",
+        "categoryName": "Kommunal toʻlovlar",
+        "date": "2026-11-07",
+        "time": "11:20",
+        "description": "Uy interneti va elektr energiyasi toʻlovi",
+        "paymentMethod": "card",
+        "notes": "Noyabr oyi uchun toʻliq toʻlandi",
+        "createdAt": "2026-11-10T03:33:59.243Z"
+      },
+      {
+        "id": "tx_seed_4",
+        "userId": "usr_demo_hisobot_2026",
+        "type": "expense",
+        "amount": 650000,
+        "categoryId": "exp_transport",
+        "categoryName": "Transport va yoqilgʻi",
+        "date": "2026-11-06",
+        "time": "08:40",
+        "description": "Yoqilgʻi quyish shoxobchasi (Benzin Ai-95)",
+        "paymentMethod": "card",
+        "notes": "Avtomobil baki toʻldirildi",
+        "createdAt": "2026-11-10T03:33:59.243Z"
+      },
+      {
+        "id": "tx_seed_3",
+        "userId": "usr_demo_hisobot_2026",
+        "type": "expense",
+        "amount": 2800000,
+        "categoryId": "exp_food",
+        "categoryName": "Oziq-ovqat va kafe",
+        "date": "2026-11-05",
+        "time": "19:15",
+        "description": "Korzinka supermarketidan oylik mahsulotlar",
+        "paymentMethod": "card",
+        "notes": "Goʻsht, sut, meva va non mahsulotlari",
+        "createdAt": "2026-11-10T03:33:59.243Z"
+      },
+      {
+        "id": "tx_seed_2",
+        "userId": "usr_demo_hisobot_2026",
+        "type": "income",
+        "amount": 3200000,
+        "categoryId": "inc_freelance",
+        "categoryName": "Frilans",
+        "date": "2026-11-04",
+        "time": "17:45",
+        "description": "Veb-sayt dizayni loyihasi uchun toʻlov",
+        "paymentMethod": "card",
+        "notes": "Frontend loyihasi yakunlandi",
+        "createdAt": "2026-11-10T03:33:59.243Z"
+      },
+      {
+        "id": "tx_seed_1",
+        "userId": "usr_demo_hisobot_2026",
+        "type": "income",
+        "amount": 15000000,
+        "categoryId": "inc_salary",
+        "categoryName": "Oylik maosh",
+        "date": "2026-11-01",
+        "time": "09:30",
+        "description": "Kompaniyadan oylik maosh",
+        "paymentMethod": "card",
+        "notes": "Noyabr oyi asosiy maoshi",
+        "createdAt": "2026-11-10T03:33:59.243Z"
+      }
+    ]
+  },
+  "categories": {},
+  "budgets": {
+    "usr_demo_hisobot_2026": [
+      {
+        "id": "bdg_1",
+        "userId": "usr_demo_hisobot_2026",
+        "categoryId": "exp_food",
+        "categoryName": "Oziq-ovqat va kafe",
+        "monthlyLimit": 3500000,
+        "month": "2026-11",
+        "alertThreshold": 80
+      },
+      {
+        "id": "bdg_2",
+        "userId": "usr_demo_hisobot_2026",
+        "categoryId": "exp_transport",
+        "categoryName": "Transport va yoqilgʻi",
+        "monthlyLimit": 1200000,
+        "month": "2026-11",
+        "alertThreshold": 80
+      },
+      {
+        "id": "bdg_3",
+        "userId": "usr_demo_hisobot_2026",
+        "categoryId": "exp_shopping",
+        "categoryName": "Xaridlar va kiyim",
+        "monthlyLimit": 2000000,
+        "month": "2026-11",
+        "alertThreshold": 80
+      }
+    ]
+  },
+  "goals": {
+    "usr_demo_hisobot_2026": [
+      {
+        "id": "goal_1",
+        "userId": "usr_demo_hisobot_2026",
+        "name": "Avtomobil xaridi (Chevrolet Tracker)",
+        "targetAmount": 200000000,
+        "savedAmount": 75000000,
+        "deadline": "2027-06-30",
+        "color": "#3B82F6",
+        "icon": "Car",
+        "createdAt": "2026-01-15T10:00:00.000Z"
+      },
+      {
+        "id": "goal_2",
+        "userId": "usr_demo_hisobot_2026",
+        "name": "Umra safari ziyorati",
+        "targetAmount": 25000000,
+        "savedAmount": 18500000,
+        "deadline": "2027-03-20",
+        "color": "#10B981",
+        "icon": "Plane",
+        "createdAt": "2026-03-01T10:00:00.000Z"
+      },
+      {
+        "id": "goal_3",
+        "userId": "usr_demo_hisobot_2026",
+        "name": "Favqulodda xavfsizlik jamgʻarmasi",
+        "targetAmount": 20000000,
+        "savedAmount": 13450000,
+        "deadline": "2026-12-31",
+        "color": "#8B5CF6",
+        "icon": "ShieldCheck",
+        "createdAt": "2026-05-10T10:00:00.000Z"
+      }
+    ]
+  },
+  "debts": {
+    "usr_demo_hisobot_2026": [
+      {
+        "id": "debt_1",
+        "userId": "usr_demo_hisobot_2026",
+        "type": "borrowed",
+        "personName": "Sardor Qosimov (Aka)",
+        "amount": 2500000,
+        "paidAmount": 1000000,
+        "remainingAmount": 1500000,
+        "startDate": "2026-11-02",
+        "dueDate": "2026-11-25",
+        "status": "partial",
+        "phone": "+998 90 123 45 67",
+        "notes": "Avtomobil taʼmiri uchun qarz olingan"
+      },
+      {
+        "id": "debt_2",
+        "userId": "usr_demo_hisobot_2026",
+        "type": "lent",
+        "personName": "Jamshid Alimov (Doʻstim)",
+        "amount": 4000000,
+        "paidAmount": 2000000,
+        "remainingAmount": 2000000,
+        "startDate": "2026-10-15",
+        "dueDate": "2026-11-30",
+        "status": "partial",
+        "phone": "+998 97 987 65 43",
+        "notes": "Oʻquv kursi toʻlovi uchun berilgan"
+      }
+    ]
+  },
+  "notifications": {
+    "usr_demo_hisobot_2026": [
+      {
+        "id": "notif_prem_1794370034252",
+        "userId": "usr_demo_hisobot_2026",
+        "title": "Tabriklaymiz! HISOBOT AI Premium faollashtirildi",
+        "message": "Siz muvaffaqiyatli Business tarifiga obuna boʻldingiz. Barcha cheklovlar olib tashlandi!",
+        "type": "monthly_summary",
+        "date": "2026-11-11",
+        "isRead": true,
+        "linkTab": "settings"
+      },
+      {
+        "id": "notif_b62c098c-dde0-4c35-989a-46eabd5c7afa",
+        "userId": "usr_demo_hisobot_2026",
+        "title": "Budjet ogohlantirishi: Oziq-ovqat va kafe",
+        "message": "Oziq-ovqat va kafe boʻyicha sarf-xarajatingiz belgilangan budjetning 92% qismiga yetdi (3 230 000 / 3 500 000 soʻm).",
+        "type": "budget_warning",
+        "linkTab": "budgets",
+        "date": "2026-11-11",
+        "isRead": true
+      },
+      {
+        "id": "notif_prem_1794284334635",
+        "userId": "usr_demo_hisobot_2026",
+        "title": "Tabriklaymiz! HISOBOT AI Premium faollashtirildi",
+        "message": "Siz muvaffaqiyatli Pro tarifiga obuna boʻldingiz. Barcha cheklovlar olib tashlandi!",
+        "type": "monthly_summary",
+        "date": "2026-11-10",
+        "isRead": true,
+        "linkTab": "settings"
+      },
+      {
+        "id": "notif_3a556774-6afb-41a1-922f-2392936ff68b",
+        "userId": "usr_demo_hisobot_2026",
+        "title": "Budjet ogohlantirishi: Transport va yoqilgʻi",
+        "message": "Transport va yoqilgʻi boʻyicha sarf-xarajatingiz belgilangan budjetning 311% qismiga yetdi (3 730 000 / 1 200 000 soʻm).",
+        "type": "budget_warning",
+        "linkTab": "budgets",
+        "date": "2026-11-10",
+        "isRead": true
+      },
+      {
+        "id": "notif_015c09bf-2194-4977-9552-044298487d10",
+        "userId": "usr_demo_hisobot_2026",
+        "title": "Budjet ogohlantirishi: Oziq-ovqat va kafe",
+        "message": "Oziq-ovqat va kafe boʻyicha sarf-xarajatingiz belgilangan budjetning 107% qismiga yetdi (3 730 000 / 3 500 000 soʻm).",
+        "type": "budget_warning",
+        "linkTab": "budgets",
+        "date": "2026-11-10",
+        "isRead": true
+      },
+      {
+        "id": "notif_0e41741a-9f32-44c1-a7b6-f9f700027e85",
+        "userId": "usr_demo_hisobot_2026",
+        "title": "Budjet ogohlantirishi: Oziq-ovqat va kafe",
+        "message": "Oziq-ovqat va kafe boʻyicha sarf-xarajatingiz belgilangan budjetning 87% qismiga yetdi (3 035 000 / 3 500 000 soʻm).",
+        "type": "budget_warning",
+        "linkTab": "budgets",
+        "date": "2026-11-10",
+        "isRead": true
+      },
+      {
+        "id": "notif_1",
+        "userId": "usr_demo_hisobot_2026",
+        "title": "Budjet ogohlantirishi: Oziq-ovqat va kafe",
+        "message": "Oziq-ovqat toifasidagi xarajatlaringiz 84% ga yetdi (2 950 000 / 3 500 000 soʻm). Meʼyordan oshib ketmaslikka eʼtibor bering.",
+        "type": "budget_warning",
+        "date": "2026-11-10",
+        "isRead": true,
+        "linkTab": "budgets"
+      },
+      {
+        "id": "notif_2",
+        "userId": "usr_demo_hisobot_2026",
+        "title": "Qarz toʻlovi yaqinlashmoqda",
+        "message": "Sardor Qosimovga 1 500 000 soʻm qarz toʻlovi muddati 25-noyabrda tugaydi.",
+        "type": "debt_due",
+        "date": "2026-11-10",
+        "isRead": true,
+        "linkTab": "debts"
+      },
+      {
+        "id": "notif_3",
+        "userId": "usr_demo_hisobot_2026",
+        "title": "Maqsad sari qadam: Umra safari",
+        "message": "Tabriklaymiz! Siz \"Umra safari\" maqsadingizning 74% qismini jamgʻarishga muvaffaq boʻldingiz.",
+        "type": "goal_reached",
+        "date": "2026-11-10",
+        "isRead": true,
+        "linkTab": "goals"
+      }
+    ]
+  },
+  "wallets": {
+    "usr_demo_hisobot_2026": [
+      {
+        "id": "w_1",
+        "userId": "usr_demo_hisobot_2026",
+        "name": "Asosiy karta (Uzcard)",
+        "type": "card",
+        "balance": 8400000,
+        "currency": "UZS",
+        "color": "#10B981",
+        "icon": "CreditCard",
+        "accountNumber": "*8824",
+        "createdAt": "2026-11-10T04:09:47.989Z"
+      },
+      {
+        "id": "w_2",
+        "userId": "usr_demo_hisobot_2026",
+        "name": "Humo karta",
+        "type": "card",
+        "balance": 3200000,
+        "currency": "UZS",
+        "color": "#F59E0B",
+        "icon": "CreditCard",
+        "accountNumber": "*1042",
+        "createdAt": "2026-11-10T04:09:47.990Z"
+      },
+      {
+        "id": "w_3",
+        "userId": "usr_demo_hisobot_2026",
+        "name": "Naqd pul hamyoni",
+        "type": "cash",
+        "balance": 1800000,
+        "currency": "UZS",
+        "color": "#3B82F6",
+        "icon": "Banknote",
+        "createdAt": "2026-11-10T04:09:47.990Z"
+      },
+      {
+        "id": "w_4",
+        "userId": "usr_demo_hisobot_2026",
+        "name": "AQSH Dollari (Visa)",
+        "type": "card",
+        "balance": 450,
+        "currency": "USD",
+        "color": "#8B5CF6",
+        "icon": "CreditCard",
+        "accountNumber": "*9901",
+        "createdAt": "2026-11-10T04:09:47.990Z"
+      }
+    ]
+  },
+  "walletTransfers": {},
+  "familyGroups": {
+    "fam_qodirovlar_2026": {
+      "id": "fam_qodirovlar_2026",
+      "name": "Qodirovlar oilasi budjeti",
+      "ownerId": "usr_demo_hisobot_2026",
+      "currency": "UZS",
+      "monthlyBudget": 14000000,
+      "createdAt": "2026-11-10T04:09:47.990Z"
+    }
+  },
+  "familyMembers": {
+    "fam_qodirovlar_2026": [
+      {
+        "id": "fm_1",
+        "familyId": "fam_qodirovlar_2026",
+        "userId": "usr_demo_hisobot_2026",
+        "email": "demo@hisobot.uz",
+        "fullName": "Anvar Qodirov",
+        "role": "owner",
+        "joinedAt": "2026-11-10T04:09:47.990Z"
+      },
+      {
+        "id": "fm_2",
+        "familyId": "fam_qodirovlar_2026",
+        "userId": "usr_malika_qodirova",
+        "email": "malika@hisobot.uz",
+        "fullName": "Malika Qodirova",
+        "role": "admin",
+        "joinedAt": "2026-11-10T04:09:47.990Z"
+      },
+      {
+        "id": "fm_3",
+        "familyId": "fam_qodirovlar_2026",
+        "userId": "usr_jasur_qodirov",
+        "email": "jasur@hisobot.uz",
+        "fullName": "Jasur Qodirov (Farzand)",
+        "role": "member",
+        "joinedAt": "2026-11-10T04:09:47.990Z"
+      }
+    ]
+  },
+  "familyInvitations": {},
+  "subscriptions": {
+    "usr_demo_hisobot_2026": [
+      {
+        "id": "sub_1",
+        "userId": "usr_demo_hisobot_2026",
+        "serviceName": "YouTube Premium",
+        "amount": 45000,
+        "currency": "UZS",
+        "billingInterval": "monthly",
+        "nextPaymentDate": "2026-11-20",
+        "walletName": "Asosiy karta (Uzcard)",
+        "status": "active",
+        "categoryName": "Hordiq va koʻngilochar",
+        "icon": "Youtube",
+        "createdAt": "2026-11-10T04:09:47.990Z"
+      },
+      {
+        "id": "sub_2",
+        "userId": "usr_demo_hisobot_2026",
+        "serviceName": "Uy interneti (Uztelecom)",
+        "amount": 180000,
+        "currency": "UZS",
+        "billingInterval": "monthly",
+        "nextPaymentDate": "2026-11-25",
+        "walletName": "Asosiy karta (Uzcard)",
+        "status": "active",
+        "categoryName": "Kommunal toʻlovlar",
+        "icon": "Wifi",
+        "createdAt": "2026-11-10T04:09:47.990Z"
+      },
+      {
+        "id": "sub_3",
+        "userId": "usr_demo_hisobot_2026",
+        "serviceName": "Telegram Premium",
+        "amount": 35000,
+        "currency": "UZS",
+        "billingInterval": "monthly",
+        "nextPaymentDate": "2026-11-18",
+        "walletName": "Humo karta",
+        "status": "active",
+        "categoryName": "Hordiq va koʻngilochar",
+        "icon": "Send",
+        "createdAt": "2026-11-10T04:09:47.990Z"
+      },
+      {
+        "id": "sub_4",
+        "userId": "usr_demo_hisobot_2026",
+        "serviceName": "Sport zal oylik abonementi",
+        "amount": 400000,
+        "currency": "UZS",
+        "billingInterval": "monthly",
+        "nextPaymentDate": "2026-12-01",
+        "walletName": "Asosiy karta (Uzcard)",
+        "status": "active",
+        "categoryName": "Salomatlik va dori",
+        "icon": "Dumbbell",
+        "createdAt": "2026-11-10T04:09:47.990Z"
+      }
+    ]
+  },
+  "recurringTransactions": {
+    "usr_demo_hisobot_2026": [
+      {
+        "id": "rec_1",
+        "userId": "usr_demo_hisobot_2026",
+        "type": "income",
+        "amount": 15000000,
+        "currency": "UZS",
+        "categoryId": "inc_salary",
+        "categoryName": "Oylik maosh",
+        "description": "Oylik ish haqi",
+        "paymentMethod": "card",
+        "frequency": "monthly",
+        "nextExecutionDate": "2026-12-01",
+        "status": "active",
+        "idempotencyKeyPrefix": "salary_monthly",
+        "createdAt": "2026-11-10T04:09:47.990Z"
+      },
+      {
+        "id": "rec_2",
+        "userId": "usr_demo_hisobot_2026",
+        "type": "expense",
+        "amount": 800000,
+        "currency": "UZS",
+        "categoryId": "exp_housing",
+        "categoryName": "Uy-joy va ijara",
+        "description": "Uy kommunal xizmatlari",
+        "paymentMethod": "bank",
+        "frequency": "monthly",
+        "nextExecutionDate": "2026-12-05",
+        "status": "active",
+        "idempotencyKeyPrefix": "housing_monthly",
+        "createdAt": "2026-11-10T04:09:47.990Z"
+      }
+    ]
+  },
+  "recurringLogs": {},
+  "receipts": {},
+  "bankConnections": {
+    "usr_demo_hisobot_2026": [
+      {
+        "id": "bank_uzum_1",
+        "userId": "usr_demo_hisobot_2026",
+        "bankId": "uzum_bank",
+        "bankName": "Uzum Bank (Online banking)",
+        "logo": "ShoppingBag",
+        "status": "connected",
+        "lastSyncAt": "2026-11-10",
+        "accounts": [
+          {
+            "id": "acc_uzum_1",
+            "name": "Uzum Karta (Virtual Humo)",
+            "type": "Humo",
+            "balance": 3200000,
+            "currency": "UZS",
+            "mask": "*1042"
+          }
+        ]
+      },
+      {
+        "id": "bank_kapital_1",
+        "userId": "usr_demo_hisobot_2026",
+        "bankId": "kapitalbank",
+        "bankName": "Kapitalbank (Visa / Uzcard)",
+        "logo": "Building2",
+        "status": "connected",
+        "lastSyncAt": "2026-11-10",
+        "accounts": [
+          {
+            "id": "acc_kapital_1",
+            "name": "Oylik kartasi (Uzcard)",
+            "type": "Uzcard",
+            "balance": 8400000,
+            "currency": "UZS",
+            "mask": "*8824"
+          },
+          {
+            "id": "acc_kapital_2",
+            "name": "Xalqaro valyuta kartasi",
+            "type": "Visa Classic",
+            "balance": 450,
+            "currency": "USD",
+            "mask": "*9901"
+          }
+        ]
+      }
+    ]
+  },
+  "bankSyncLogs": {
+    "usr_demo_hisobot_2026": [
+      {
+        "id": "sync_246a162d-a010-4eb3-9a34-69144723ff80",
+        "userId": "usr_demo_hisobot_2026",
+        "bankName": "Uzum Bank (Online banking)",
+        "syncedAt": "2026-11-10T04:11:49.066Z",
+        "importedCount": 2,
+        "status": "success"
+      }
+    ]
+  },
+  "telegramConnections": {
+    "usr_demo_hisobot_2026": {
+      "userId": "usr_demo_hisobot_2026",
+      "isConnected": true,
+      "telegramUsername": "@anvar_qodirov",
+      "chatId": "89472619",
+      "connectCode": "HISOBOT-7842",
+      "preferences": {
+        "dailyReport": true,
+        "weeklyReport": true,
+        "budgetAlerts": true,
+        "subscriptionAlerts": true
+      },
+      "connectedAt": "2026-10-15T12:00:00.000Z"
+    }
+  }
+}
