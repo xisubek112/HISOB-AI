@@ -128,18 +128,41 @@ class Database {
           bankSyncLogs: parsed.bankSyncLogs || {},
           telegramConnections: parsed.telegramConnections || {},
         };
-      } else {
+      } else if (
+        process.env.NODE_ENV !== 'production' &&
+        process.env.ENABLE_DEMO_SEED === 'true'
+      ) {
+        // Demo data is opt-in for local development; disabled by default.
         this.seedDemoUser();
+        this.persist();
+      } else {
+        // Production starts with an empty store; never create demo identities.
         this.persist();
       }
 
-      // Ensure demo user has initial data for the new modules if missing
-      this.ensureDemoAdvancedData();
-      this.data.sessions['demo_token'] = 'usr_demo_hisobot_2026';
+      if (
+        process.env.NODE_ENV !== 'production' &&
+        process.env.ENABLE_DEMO_SEED === 'true'
+      ) {
+        // Ensure demo user has initial data only when explicitly enabled locally.
+        this.ensureDemoAdvancedData();
+        this.data.sessions['demo_token'] = 'usr_demo_hisobot_2026';
+      } else {
+        // Remove any legacy demo credential loaded from an existing JSON file.
+        // Preserve any existing records for export/migration, but revoke the
+        // known demo bearer token. Demo credentials are also rejected at login.
+        delete this.data.sessions['demo_token'];
+        this.persist();
+      }
     } catch (e) {
-      console.error('Database initialization error, creating fresh state:', e);
-      this.seedDemoUser();
-      this.data.sessions['demo_token'] = 'usr_demo_hisobot_2026';
+      console.error('Database initialization error:', e);
+      if (
+        process.env.NODE_ENV !== 'production' &&
+        process.env.ENABLE_DEMO_SEED === 'true'
+      ) {
+        this.seedDemoUser();
+        this.data.sessions['demo_token'] = 'usr_demo_hisobot_2026';
+      }
       this.persist();
     }
   }
@@ -782,7 +805,7 @@ class Database {
 
   loginUser(email: string, password: string): { user: UserProfile; token: string } {
     const user = Object.values(this.data.users).find((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (!user) {
+    if (!user || (process.env.NODE_ENV === 'production' && user.id === 'usr_demo_hisobot_2026')) {
       throw new Error('Elektron pochta yoki parol notoʻgʻri');
     }
 

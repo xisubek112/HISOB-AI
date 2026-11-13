@@ -111,24 +111,14 @@ app.post('/api/auth/verify-password', authMiddleware, (req: AuthenticatedRequest
   res.json({ valid: true });
 });
 
-app.post('/api/auth/forgot-password', (req: Request, res: Response) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ error: 'Elektron pochtani kiriting' });
-  const message = db.forgotPassword(email);
-  res.json({ message });
+// Password reset is intentionally unavailable until a verified email/SMS
+// delivery provider, hashed one-time tokens, expiry, and rate limits are implemented.
+app.post('/api/auth/forgot-password', (_req: Request, res: Response) => {
+  res.status(503).json({ error: 'Parolni tiklash xizmati vaqtincha ishlamayapti. Qoʻllab-quvvatlash xizmatiga murojaat qiling.' });
 });
 
-app.post('/api/auth/reset-password', (req: Request, res: Response) => {
-  const { email, code, newPassword } = req.body;
-  if (!email || !code || !newPassword) {
-    return res.status(400).json({ error: 'Barcha maydonlarni kiriting' });
-  }
-  try {
-    db.resetPasswordWithCode(email, code, newPassword);
-    res.json({ success: true, message: 'Parol muvaffaqiyatli yangilandi' });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
+app.post('/api/auth/reset-password', (_req: Request, res: Response) => {
+  res.status(503).json({ error: 'Parolni tiklash xizmati vaqtincha ishlamayapti.' });
 });
 
 app.put('/api/auth/profile', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
@@ -140,14 +130,10 @@ app.put('/api/auth/profile', authMiddleware, (req: AuthenticatedRequest, res: Re
   }
 });
 
-app.post('/api/user/upgrade-premium', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { plan, durationMonths } = req.body;
-    const user = db.upgradeToPremium(req.user!.id, plan || 'pro', Number(durationMonths) || 1);
-    res.json({ user, message: 'HISOBOT AI Premium muvaffaqiyatli faollashtirildi!' });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
+// Premium activation is disabled until a trusted payment provider/webhook
+// verifies a unique payment event on the server.
+app.post('/api/user/upgrade-premium', authMiddleware, (_req: AuthenticatedRequest, res: Response) => {
+  res.status(403).json({ error: 'Premium faollashtirish toʻlov tekshiruvi joriy etilguncha vaqtincha yopiq.' });
 });
 
 app.put('/api/auth/change-password', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
