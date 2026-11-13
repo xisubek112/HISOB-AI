@@ -144,3 +144,11 @@ scheduler or Express routes yet. The scheduler must supply a stable execution
 ID for retries and should not create an execution ID until it has determined
 which scheduled occurrence is being processed. A failed insufficient-balance
 execution rolls back all changes; it does not currently create a failed log.
+
+
+### Recurring schedule validation hardening
+
+The recurring RPC also validates supported frequencies and required category and
+payment-method fields before creating a transaction. Generated transaction and
+log record IDs are derived from a digest of the user and execution ID, avoiding
+unsafe direct use of caller-provided text as a record key.
