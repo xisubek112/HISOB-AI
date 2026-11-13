@@ -100,7 +100,7 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
   const [voiceOverlayOpen, setVoiceOverlayOpen] = useState(false);
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const [mobileInsightOpen, setMobileInsightOpen] = useState(false);
-  const [autoSpeak, setAutoSpeak] = useState(false);
+  const [autoSpeak, setAutoSpeak] = useState(true);
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
 
   const {
