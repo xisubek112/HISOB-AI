@@ -76,3 +76,17 @@ have been written, do not delete rows manually: inspect the error and rerun the
 same import after correcting the cause. Keep the original JSON backup unchanged.
 The importer does not provide a single transaction across all three tables, so
 a failed run can leave a partial but safely re-runnable import.
+
+
+## Async repository foundation
+
+`src/server/supabase-repository.ts` provides typed async primitives for
+user-owned collections: list records, read one record, upsert one or a bounded
+batch, and delete one record. The batch operation rejects duplicate IDs and
+never deletes records omitted from the submitted batch.
+
+This is intentionally a foundation only. It does not make multi-step financial
+operations atomic, and it is not connected to Express or the legacy Database
+class yet. Wallet transfers, recurring execution, goal deposits, debt payments,
+and family membership changes must be implemented with database-side atomic
+operations before their routes can move to this repository.
