@@ -125,3 +125,22 @@ wired into the current API routes. The caller must generate and retain a unique
 operation ID for each user action and reuse that same ID only for retries of
 that action. Do not apply this migration until the earlier storage and wallet
 migrations have been reviewed and applied in order in a non-production project.
+
+
+## Atomic recurring transaction execution
+
+The migration `supabase/migrations/202611130004_atomic_recurring_execution.sql`
+adds a private execution ledger and the
+`hisobot_execute_recurring_transaction` RPC. It locks the recurring schedule,
+checks that it is active and due, optionally locks and updates its wallet,
+creates the transaction and execution log, and advances the schedule in one
+database transaction. A unique execution ID and a unique recurring-schedule
+date prevent duplicate execution on retries.
+
+The Node adapter and async repository expose
+`executeRecurringTransactionAtomically` and
+`executeRecurringScheduleAtomically`. They are not connected to the current
+scheduler or Express routes yet. The scheduler must supply a stable execution
+ID for retries and should not create an execution ID until it has determined
+which scheduled occurrence is being processed. A failed insufficient-balance
+execution rolls back all changes; it does not currently create a failed log.
