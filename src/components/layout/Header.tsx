@@ -116,9 +116,9 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="h-16 px-4 sm:px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4 sticky top-0 z-30">
+    <header className="h-16 px-3 sm:px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 sm:gap-4 sticky top-0 z-30 min-w-0">
       {/* Zone 1: Section Title and Mobile Menu */}
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
         <button
           onClick={onOpenMobileMenu}
           className="lg:hidden p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -137,12 +137,12 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Zone 2: Fast Action Shortcuts */}
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-1 sm:gap-2 shrink-0">
         {onOpenVoiceModal && (
           <button
             onClick={onOpenVoiceModal}
             title="Ovozli tranzaksiya kiritish"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/50 rounded-xl hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-colors whitespace-nowrap shrink-0"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 rounded-xl hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap shrink-0"
           >
             <Mic className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Ovoz bilan</span>
@@ -179,7 +179,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenPremiumModal}
             title={user?.isPremium ? `HISOBOT AI ${user.premiumPlan?.toUpperCase()} hisobi` : "Premium tarifiga oʻtish"}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all shrink-0 shadow-xs ${
+            className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all shrink-0 shadow-xs ${
               user?.isPremium
                 ? 'bg-gradient-to-r from-amber-500/15 via-yellow-500/20 to-amber-500/15 border border-amber-400/50 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25'
                 : 'bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-white shadow-amber-500/20 hover:shadow-md'
@@ -198,7 +198,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Yorugʻ rejim' : 'Tungi rejim'}
-          className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+          className="p-2 sm:p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
         >
           {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
         </button>
