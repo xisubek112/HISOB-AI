@@ -95,8 +95,19 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
         stopTTS();
         const clean = rawText.replace(/\*\*/g, '').replace(/\n+/g, '. ');
         const utterance = new SpeechSynthesisUtterance(clean);
-        utterance.lang = speechLang;
-        utterance.rate = 1.02;
+        const availableVoices = window.speechSynthesis.getVoices();
+        const requestedLanguage = speechLang.toLowerCase();
+        const matchingVoice =
+          availableVoices.find((voice) => voice.lang.toLowerCase() === requestedLanguage) ||
+          availableVoices.find((voice) =>
+            voice.lang.toLowerCase().startsWith(requestedLanguage.split('-')[0])
+          );
+        if (matchingVoice) {
+          utterance.voice = matchingVoice;
+        }
+        utterance.lang = matchingVoice?.lang || speechLang;
+        utterance.rate = 0.95;
+        utterance.pitch = 1.0;
 
         utterance.onstart = () => {
           if (!isPausedRef.current) {
@@ -108,12 +119,19 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
             setRobotState('idle');
           }
         };
-        utterance.onerror = () => {
+        utterance.onerror = (event) => {
           if (!isPausedRef.current) {
-            setRobotState('idle');
+            setRobotState('error');
+            setErrorMsg(
+              event.error === 'not-allowed'
+                ? 'Ovoz chiqarishga ruxsat berilmadi. Telefon ovoz sozlamalarini tekshiring.'
+                : 'Ovoz sintezi ishlamadi. Android sozlamalarida Text-to-Speech ovoz paketini tekshiring.'
+            );
           }
         };
 
+        // Android WebView may initially pause speech synthesis; resume before speaking.
+        window.speechSynthesis.resume();
         window.speechSynthesis.speak(utterance);
       } catch {
         setRobotState('idle');
