@@ -9,6 +9,8 @@ import {
   listUserData,
   saveManyUserData,
   saveUserData,
+  transferWalletsAtomically,
+  type AtomicWalletTransferInput,
   type AppDataCollection,
   type StoredAppData,
 } from './supabase-storage';
@@ -108,4 +110,12 @@ export async function removeRecord(
     requireId(scopeKey, 'scopeKey'),
     requireId(recordId, 'recordId'),
   );
+}
+
+
+/** Atomically update both wallet balances and append the transfer ledger entry. */
+export async function transferWallets(
+  input: AtomicWalletTransferInput,
+): Promise<Record<string, unknown>> {
+  return transferWalletsAtomically(input);
 }
