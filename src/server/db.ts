@@ -128,18 +128,45 @@ class Database {
           bankSyncLogs: parsed.bankSyncLogs || {},
           telegramConnections: parsed.telegramConnections || {},
         };
-      } else {
+      } else if (process.env.NODE_ENV !== 'production') {
+        // Demo data is permitted only in local development.
         this.seedDemoUser();
+        this.persist();
+      } else {
+        // Production starts with an empty store; never create demo identities.
         this.persist();
       }
 
-      // Ensure demo user has initial data for the new modules if missing
-      this.ensureDemoAdvancedData();
-      this.data.sessions['demo_token'] = 'usr_demo_hisobot_2026';
+      if (process.env.NODE_ENV !== 'production') {
+        // Ensure demo user has initial data for local development only.
+        this.ensureDemoAdvancedData();
+        this.data.sessions['demo_token'] = 'usr_demo_hisobot_2026';
+      } else {
+        // Remove any legacy demo credential loaded from an existing JSON file.
+        delete this.data.sessions['demo_token'];
+        delete this.data.users['usr_demo_hisobot_2026'];
+        delete this.data.transactions['usr_demo_hisobot_2026'];
+        delete this.data.categories['usr_demo_hisobot_2026'];
+        delete this.data.budgets['usr_demo_hisobot_2026'];
+        delete this.data.goals['usr_demo_hisobot_2026'];
+        delete this.data.debts['usr_demo_hisobot_2026'];
+        delete this.data.notifications['usr_demo_hisobot_2026'];
+        delete this.data.wallets['usr_demo_hisobot_2026'];
+        delete this.data.subscriptions['usr_demo_hisobot_2026'];
+        delete this.data.recurringTransactions['usr_demo_hisobot_2026'];
+        delete this.data.receipts['usr_demo_hisobot_2026'];
+        delete this.data.bankConnections['usr_demo_hisobot_2026'];
+        delete this.data.telegramConnections['usr_demo_hisobot_2026'];
+        delete this.data.bankSyncLogs['usr_demo_hisobot_2026'];
+        delete this.data.recurringLogs['usr_demo_hisobot_2026'];
+        this.persist();
+      }
     } catch (e) {
-      console.error('Database initialization error, creating fresh state:', e);
-      this.seedDemoUser();
-      this.data.sessions['demo_token'] = 'usr_demo_hisobot_2026';
+      console.error('Database initialization error:', e);
+      if (process.env.NODE_ENV !== 'production') {
+        this.seedDemoUser();
+        this.data.sessions['demo_token'] = 'usr_demo_hisobot_2026';
+      }
       this.persist();
     }
   }
