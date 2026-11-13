@@ -179,11 +179,11 @@ export async function listUserData(
   scopeKey?: string,
 ): Promise<StoredAppData[]> {
   userId = requireNonEmpty(userId, 'userId');
-  collection = requireCollection(collection);
+  const allowedCollection = requireCollection(collection);
   const filters: Record<string, string> = {
     select: '*',
     owner_user_id: `eq.${userId}`,
-    collection: `eq.${collection}`,
+    collection: `eq.${allowedCollection}`,
     order: 'updated_at.asc',
   };
   if (scopeKey !== undefined) filters.scope_key = `eq.${scopeKey}`;
@@ -208,13 +208,13 @@ export async function deleteUserData(
   recordKey: string,
 ): Promise<void> {
   userId = requireNonEmpty(userId, 'userId');
-  collection = requireCollection(collection);
+  const allowedCollection = requireCollection(collection);
   scopeKey = requireNonEmpty(scopeKey, 'scopeKey');
   recordKey = requireNonEmpty(recordKey, 'recordKey');
   await request<void>(
     `app_data?${query({
       owner_user_id: `eq.${userId}`,
-      collection: `eq.${collection}`,
+      collection: `eq.${allowedCollection}`,
       scope_key: `eq.${scopeKey}`,
       record_key: `eq.${recordKey}`,
     })}`,
