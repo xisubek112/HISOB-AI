@@ -211,6 +211,51 @@ export async function saveUserData(record: StoredAppData): Promise<void> {
   );
 }
 
+export interface AtomicWalletTransferInput {
+  userId: string;
+  fromWalletId: string;
+  toWalletId: string;
+  amount: number;
+  targetAmount: number;
+  transferId: string;
+  date: string;
+  notes?: string;
+}
+
+/** Execute the wallet balance changes and ledger insert in one DB transaction. */
+export async function transferWalletsAtomically(
+  input: AtomicWalletTransferInput,
+): Promise<Record<string, unknown>> {
+  requireNonEmpty(input.userId, 'userId');
+  requireNonEmpty(input.fromWalletId, 'fromWalletId');
+  requireNonEmpty(input.toWalletId, 'toWalletId');
+  requireNonEmpty(input.transferId, 'transferId');
+  requireNonEmpty(input.date, 'date');
+  if (input.fromWalletId === input.toWalletId) {
+    throw new SupabaseStorageError('Source and destination wallets must differ');
+  }
+  if (!Number.isSafeInteger(input.amount) || input.amount <= 0 ||
+      !Number.isSafeInteger(input.targetAmount) || input.targetAmount <= 0) {
+    throw new SupabaseStorageError('Transfer amounts must be positive safe integers');
+  }
+  return request<Record<string, unknown>>(
+    'rpc/hisobot_transfer_between_wallets',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        p_user_id: input.userId,
+        p_from_wallet_id: input.fromWalletId,
+        p_to_wallet_id: input.toWalletId,
+        p_amount: input.amount,
+        p_target_amount: input.targetAmount,
+        p_transfer_id: input.transferId,
+        p_date: input.date,
+        p_notes: input.notes ?? null,
+      }),
+    },
+  );
+}
+
 /** Upsert a bounded batch in one PostgREST request. */
 export async function saveManyUserData(records: StoredAppData[]): Promise<void> {
   if (records.length === 0) return;
