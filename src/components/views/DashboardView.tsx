@@ -72,7 +72,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const savingsRate = summary?.savingsRate ?? 0;
 
   return (
-    <div className="relative space-y-5 sm:space-y-7 pb-6 hai-dashboard">
+    <div className="relative w-full min-w-0 max-w-full space-y-5 sm:space-y-7 pb-6 hai-dashboard overflow-x-clip">
       {/* Ambient background blur orbs for Glassmorphism depth */}
       <div className="pointer-events-none absolute -top-10 -left-10 w-96 h-96 bg-violet-500/10 dark:bg-violet-600/15 rounded-full blur-3xl -z-10" />
       <div className="pointer-events-none absolute top-72 -right-10 w-96 h-96 bg-cyan-500/10 dark:bg-cyan-600/15 rounded-full blur-3xl -z-10" />
@@ -91,7 +91,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           {/* Subtle light sweep reflection */}
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out pointer-events-none" />
 
-          <div className="flex items-center gap-3.5 relative z-10">
+          <div className="flex items-start sm:items-center gap-3.5 relative z-10 min-w-0">
             <div
               className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-md backdrop-blur-md ${
                 user?.isPremium
@@ -103,7 +103,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-extrabold text-slate-900 dark:text-white tracking-tight">
+                <span className="text-sm font-extrabold text-white tracking-tight leading-snug">
                   {user?.isPremium
                     ? `HISOBOT AI ${user.premiumPlan?.toUpperCase()} — Faol Premium Obuna`
                     : 'HISOBOT AI Premium: Cheksiz moliyaviy imkoniyatlar'}
@@ -118,7 +118,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   {user?.isPremium ? 'PRO STATUS' : 'CHEGIRMA -17%'}
                 </span>
               </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+              <p className="text-xs text-emerald-50/90 mt-1 leading-relaxed">
                 {user?.isPremium
                   ? 'Cheksiz hamyonlar, AI tahlil, OCR chek skaner va oilaviy budjet funksiyalaridan toʻliq foydalanmoqdasiz.'
                   : 'Oylik 39 000 soʻm evaziga cheksiz kartalar, OCR chek skaner, 3 oylik AI prognoz va Telegram botni oching.'}
