@@ -90,3 +90,20 @@ operations atomic, and it is not connected to Express or the legacy Database
 class yet. Wallet transfers, recurring execution, goal deposits, debt payments,
 and family membership changes must be implemented with database-side atomic
 operations before their routes can move to this repository.
+
+
+## Atomic wallet transfer
+
+The migration `supabase/migrations/202611130002_atomic_wallet_transfers.sql`
+adds `hisobot_transfer_between_wallets`. It locks the two wallet rows in a
+stable order, validates ownership, archive state and available balance, updates
+both balances, and inserts the transfer ledger entry in one PostgreSQL
+transaction. The transfer ID is an idempotency key, so retrying the same request
+does not apply the balance change twice.
+
+The server adapter exposes this operation through
+`transferWalletsAtomically`, and the async repository exposes `transferWallets`.
+Neither is wired to the existing Express route yet. Do not call this RPC until
+the second SQL migration has been applied in the intended Supabase project.
+The existing JSON-backed wallet route remains active until route migration and
+staging integration tests are complete.
