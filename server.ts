@@ -51,13 +51,6 @@ const authMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunc
     }
   }
 
-  // Graceful fallback for demo user in preview environment if token missing or expired
-  const demoUser = db.getUserById('usr_demo_hisobot_2026');
-  if (demoUser) {
-    req.user = demoUser;
-    return next();
-  }
-
   return res.status(401).json({ error: 'Avtorizatsiya talab qilinadi' });
 };
 
