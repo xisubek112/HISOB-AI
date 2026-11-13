@@ -211,6 +211,39 @@ export async function saveUserData(record: StoredAppData): Promise<void> {
   );
 }
 
+export interface AtomicFinancialOperationInput {
+  userId: string;
+  operationId: string;
+  operationType: 'goal_deposit' | 'debt_payment';
+  targetRecordId: string;
+  amount: number;
+}
+
+/** Apply a goal deposit or debt payment atomically and idempotently. */
+export async function applyFinancialOperationAtomically(
+  input: AtomicFinancialOperationInput,
+): Promise<Record<string, unknown>> {
+  requireNonEmpty(input.userId, 'userId');
+  requireNonEmpty(input.operationId, 'operationId');
+  requireNonEmpty(input.targetRecordId, 'targetRecordId');
+  if (!Number.isSafeInteger(input.amount) || input.amount <= 0) {
+    throw new SupabaseStorageError('Amount must be a positive safe integer');
+  }
+  return request<Record<string, unknown>>(
+    'rpc/hisobot_apply_financial_operation',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        p_user_id: input.userId,
+        p_operation_id: input.operationId,
+        p_operation_type: input.operationType,
+        p_target_record_id: input.targetRecordId,
+        p_amount: input.amount,
+      }),
+    },
+  );
+}
+
 export interface AtomicWalletTransferInput {
   userId: string;
   fromWalletId: string;
