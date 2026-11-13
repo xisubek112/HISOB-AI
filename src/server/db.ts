@@ -143,22 +143,9 @@ class Database {
         this.data.sessions['demo_token'] = 'usr_demo_hisobot_2026';
       } else {
         // Remove any legacy demo credential loaded from an existing JSON file.
+        // Preserve any existing records for export/migration, but revoke the
+        // known demo bearer token. Demo credentials are also rejected at login.
         delete this.data.sessions['demo_token'];
-        delete this.data.users['usr_demo_hisobot_2026'];
-        delete this.data.transactions['usr_demo_hisobot_2026'];
-        delete this.data.categories['usr_demo_hisobot_2026'];
-        delete this.data.budgets['usr_demo_hisobot_2026'];
-        delete this.data.goals['usr_demo_hisobot_2026'];
-        delete this.data.debts['usr_demo_hisobot_2026'];
-        delete this.data.notifications['usr_demo_hisobot_2026'];
-        delete this.data.wallets['usr_demo_hisobot_2026'];
-        delete this.data.subscriptions['usr_demo_hisobot_2026'];
-        delete this.data.recurringTransactions['usr_demo_hisobot_2026'];
-        delete this.data.receipts['usr_demo_hisobot_2026'];
-        delete this.data.bankConnections['usr_demo_hisobot_2026'];
-        delete this.data.telegramConnections['usr_demo_hisobot_2026'];
-        delete this.data.bankSyncLogs['usr_demo_hisobot_2026'];
-        delete this.data.recurringLogs['usr_demo_hisobot_2026'];
         this.persist();
       }
     } catch (e) {
@@ -809,7 +796,7 @@ class Database {
 
   loginUser(email: string, password: string): { user: UserProfile; token: string } {
     const user = Object.values(this.data.users).find((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (!user) {
+    if (!user || (process.env.NODE_ENV === 'production' && user.id === 'usr_demo_hisobot_2026')) {
       throw new Error('Elektron pochta yoki parol notoʻgʻri');
     }
 
