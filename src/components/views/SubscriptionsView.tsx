@@ -3,9 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Calendar,
   CreditCard,
   Plus,
   Play,
@@ -13,25 +12,35 @@ import {
   Trash2,
   Edit2,
   Clock,
-  AlertCircle,
   CheckCircle2,
   Bell,
-  Sparkles,
-  X,
 } from 'lucide-react';
 import { Subscription, BillingInterval, SubscriptionStatus, CurrencyCode } from '../../types/finance.ts';
 import { api } from '../../services/api.ts';
 import { formatMoney, formatDateUz } from '../../utils/formatters.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  IconButton,
+  Input,
+  Modal,
+  Select,
+  Skeleton,
+  useToast,
+} from '../../design-system/index.ts';
 
 export const SubscriptionsView: React.FC = () => {
   const { user } = useAuth();
+  const toast = useToast();
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSub, setEditingSub] = useState<Subscription | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     serviceName: '',
     amount: '',
@@ -43,24 +52,22 @@ export const SubscriptionsView: React.FC = () => {
     notes: '',
   });
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!user) return;
     try {
       setLoading(true);
       const res = await api.getSubscriptions();
-      setSubscriptions(res.subscriptions);
+      setSubscriptions(res.subscriptions || []);
     } catch (e) {
       console.error('Failed to load subscriptions:', e);
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
-    if (user) {
-      loadData();
-    }
-  }, [user]);
+    loadData();
+  }, [loadData]);
 
   const handleOpenAdd = () => {
     setEditingSub(null);
@@ -94,53 +101,66 @@ export const SubscriptionsView: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.serviceName || !form.amount) return;
+    if (!form.serviceName.trim() || !form.amount) return;
 
     try {
+      setSaving(true);
+      const payload = {
+        serviceName: form.serviceName.trim(),
+        amount: parseFloat(form.amount) || 0,
+        currency: form.currency,
+        billingInterval: form.billingInterval,
+        nextPaymentDate: form.nextPaymentDate,
+        categoryName: form.categoryName,
+        status: form.status,
+        notes: form.notes,
+      };
+
       if (editingSub) {
-        await api.updateSubscription(editingSub.id, {
-          serviceName: form.serviceName,
-          amount: parseFloat(form.amount) || 0,
-          currency: form.currency,
-          billingInterval: form.billingInterval,
-          nextPaymentDate: form.nextPaymentDate,
-          categoryName: form.categoryName,
-          status: form.status,
-          notes: form.notes,
-        });
+        await api.updateSubscription(editingSub.id, payload);
+        toast.success('Obuna yangilandi');
       } else {
-        await api.addSubscription({
-          serviceName: form.serviceName,
-          amount: parseFloat(form.amount) || 0,
-          currency: form.currency,
-          billingInterval: form.billingInterval,
-          nextPaymentDate: form.nextPaymentDate,
-          categoryName: form.categoryName,
-          status: form.status,
-          notes: form.notes,
-        });
+        await api.addSubscription(payload);
+        toast.success('Yangi obuna qoʻshildi');
       }
       setIsModalOpen(false);
       await loadData();
-    } catch (err) {
-      console.error('Failed to save subscription:', err);
+    } catch (err: any) {
+      toast.error(err?.message || 'Obunani saqlashda xatolik');
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Ushbu obunani oʻchirmoqchimisiz?')) {
+    const confirmed = await toast.confirm({
+      title: 'Obunani oʻchirish',
+      message: 'Haqiqatan ham ushbu obunani oʻchirmoqchimisiz?',
+      confirmLabel: 'Oʻchirish',
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    try {
       await api.deleteSubscription(id);
+      toast.success('Obuna oʻchirildi');
       await loadData();
+    } catch (err: any) {
+      toast.error(err?.message || 'Oʻchirishda xatolik');
     }
   };
 
   const handleToggleStatus = async (sub: Subscription) => {
     const nextStatus: SubscriptionStatus = sub.status === 'active' ? 'paused' : 'active';
-    await api.updateSubscription(sub.id, { status: nextStatus });
-    await loadData();
+    try {
+      await api.updateSubscription(sub.id, { status: nextStatus });
+      toast.info(nextStatus === 'active' ? 'Obuna faollashtirildi' : 'Obuna pauzaga qoʻyildi');
+      await loadData();
+    } catch (err: any) {
+      toast.error(err?.message || 'Holatni oʻzgartirishda xatolik');
+    }
   };
 
-  // Calculations
   const activeSubs = subscriptions.filter((s) => s.status === 'active');
 
   const monthlyTotalUZS = activeSubs.reduce((acc, s) => {
@@ -162,306 +182,286 @@ export const SubscriptionsView: React.FC = () => {
     today.setHours(0, 0, 0, 0);
     const target = new Date(dateStr);
     target.setHours(0, 0, 0, 0);
-    const diffTime = target.getTime() - today.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   };
 
   return (
     <div className="space-y-6">
-      {/* Header bar */}
+      {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
-            Muntazam Obunalar Nazorati
+          <h2 className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 dark:text-white text-balance">
+            Muntazam obunalar nazorati
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Netflix, YouTube, internet, sunʼiy intellekt va boshqa oylik toʻlovlarni kuzatib boring
+            Raqamli xizmatlar, internet va oylik toʻlovlarni kuzatib boring
           </p>
         </div>
 
-        <button
+        <Button
+          variant="primary"
+          size="md"
+          leadingIcon={<Plus className="w-4 h-4" />}
           onClick={handleOpenAdd}
-          className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-xs"
         >
-          <Plus className="w-4 h-4" />
-          <span>Obuna qoʻshish</span>
-        </button>
+          Obuna qoʻshish
+        </Button>
       </div>
 
-      {/* Aggregate Cards */}
+      {/* Aggregate KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+        <Card interactive padding="lg">
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
             Oylik obunalar xarajati
-          </div>
-          <div className="text-2xl font-extrabold font-mono text-slate-900 dark:text-slate-100 mt-1">
+          </span>
+          <div className="text-2xl font-extrabold font-mono tabular-nums text-slate-900 dark:text-white mt-1.5">
             {formatMoney(monthlyTotalUZS, 'UZS')}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block tabular-nums">
             {activeSubs.length} ta faol xizmat
-          </div>
-        </div>
+          </span>
+        </Card>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+        <Card interactive padding="lg">
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
             Yillik umumiy sarf
-          </div>
-          <div className="text-2xl font-extrabold font-mono text-blue-600 dark:text-blue-400 mt-1">
+          </span>
+          <div className="text-2xl font-extrabold font-mono tabular-nums text-amber-600 dark:text-amber-400 mt-1.5">
             {formatMoney(annualTotalUZS, 'UZS')}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            Rejalashtirilgan yillik byudjet
-          </div>
-        </div>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
+            Rejalashtirilgan yillik sarf
+          </span>
+        </Card>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+        <Card interactive padding="lg" className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
               Eslatmalar tizimi
+            </span>
+            <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-1.5 flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>Faol (3 kun va 1 kun oldin)</span>
             </div>
-            <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4" /> Faol (3 kun va 1 kun oldin)
-            </div>
-            <div className="text-[11px] text-slate-400 mt-1">
-              Telegram va brauzer orqali
-            </div>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
+              Ilova va Telegram orqali
+            </span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
             <Bell className="w-5 h-5" />
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Subscriptions Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {subscriptions.map((sub) => {
-          const daysLeft = getDaysUntil(sub.nextPaymentDate);
-          const isUrgent = daysLeft >= 0 && daysLeft <= 3;
-          const isOverdue = daysLeft < 0;
-
-          return (
-            <div
-              key={sub.id}
-              className={`rounded-2xl border bg-white dark:bg-slate-900 p-5 shadow-xs flex flex-col justify-between transition-all ${
-                sub.status === 'paused'
-                  ? 'opacity-60 border-slate-200 dark:border-slate-800'
-                  : isUrgent
-                  ? 'border-amber-300 dark:border-amber-700/60 ring-1 ring-amber-300/50'
-                  : 'border-slate-200 dark:border-slate-800'
-              }`}
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-44 w-full" />
+          ))}
+        </div>
+      ) : subscriptions.length === 0 ? (
+        <EmptyState
+          icon={<CreditCard className="w-6 h-6" />}
+          title="Hali obunalar qoʻshilmagan"
+          description="Oylik va yillik obunalaringizni qoʻshing — tizim yaqinlashayotgan toʻlovlarni oldindan eslatadi."
+          action={
+            <Button
+              variant="primary"
+              size="md"
+              leadingIcon={<Plus className="w-4 h-4" />}
+              onClick={handleOpenAdd}
             >
-              <div>
-                <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-bold text-sm">
-                      {sub.serviceName.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                        {sub.serviceName}
-                      </h4>
-                      <span className="text-[11px] text-slate-400">
-                        {sub.categoryName} •{' '}
-                        {sub.billingInterval === 'monthly'
-                          ? 'Oylik'
-                          : sub.billingInterval === 'yearly'
-                          ? 'Yillik'
-                          : sub.billingInterval === 'quarterly'
-                          ? 'Har 3 oyda'
-                          : 'Haftalik'}
-                      </span>
-                    </div>
-                  </div>
+              Birinchi obunani qoʻshish
+            </Button>
+          }
+        />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {subscriptions.map((sub) => {
+            const daysLeft = getDaysUntil(sub.nextPaymentDate);
+            const isUrgent = daysLeft >= 0 && daysLeft <= 3;
+            const isOverdue = daysLeft < 0;
 
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleToggleStatus(sub)}
-                      title={sub.status === 'active' ? 'Toʻxtatib turish' : 'Faollashtirish'}
-                      className="p-1 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800"
-                    >
-                      {sub.status === 'active' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                    </button>
-                    <button
-                      onClick={() => handleOpenEdit(sub)}
-                      title="Tahrirlash"
-                      className="p-1 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(sub.id)}
-                      title="Oʻchirish"
-                      className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
-                  <span className="text-[11px] text-slate-400">Toʻlov summasi:</span>
-                  <span className="text-lg font-extrabold font-mono text-slate-900 dark:text-slate-100">
-                    {formatMoney(sub.amount, sub.currency)}
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-4 pt-3 border-t border-dashed border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                <span className="text-slate-400 flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>{formatDateUz(sub.nextPaymentDate)}</span>
-                </span>
-
-                {sub.status === 'paused' ? (
-                  <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
-                    Toʻxtatilgan
-                  </span>
-                ) : isUrgent ? (
-                  <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-md animate-pulse">
-                    {daysLeft === 0 ? 'Bugun toʻlov kuni' : `${daysLeft} kundan soʻng`}
-                  </span>
-                ) : isOverdue ? (
-                  <span className="text-[10px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 px-2 py-0.5 rounded-md">
-                    Toʻlov vaqti oʻtgan
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-medium text-slate-500">
-                    {daysLeft} kun qoldi
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Add / Edit Subscription Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
-                {editingSub ? 'Obunani tahrirlash' : 'Yangi obuna qoʻshish'}
-              </h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            return (
+              <Card
+                key={sub.id}
+                interactive
+                padding="lg"
+                className={[
+                  'flex flex-col justify-between',
+                  sub.status === 'paused'
+                    ? 'opacity-70'
+                    : isUrgent
+                    ? 'border-amber-500/40'
+                    : '',
+                ].join(' ')}
               >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSave} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Xizmat nomi
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Masalan: Netflix, YouTube Premium, TPS Internet"
-                  value={form.serviceName}
-                  onChange={(e) => setForm({ ...form, serviceName: e.target.value })}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Toʻlov summasi
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    required
-                    placeholder="0"
-                    value={form.amount}
-                    onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-600 font-mono"
-                  />
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0">
+                        {sub.serviceName.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                          {sub.serviceName}
+                        </h4>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block truncate">
+                          {sub.categoryName} ·{' '}
+                          {sub.billingInterval === 'monthly'
+                            ? 'Oylik'
+                            : sub.billingInterval === 'yearly'
+                            ? 'Yillik'
+                            : sub.billingInterval === 'quarterly'
+                            ? 'Har 3 oyda'
+                            : 'Haftalik'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <IconButton
+                        label={sub.status === 'active' ? 'Toʻxtatib turish' : 'Faollashtirish'}
+                        size="sm"
+                        onClick={() => handleToggleStatus(sub)}
+                      >
+                        {sub.status === 'active' ? (
+                          <Pause className="w-3.5 h-3.5" />
+                        ) : (
+                          <Play className="w-3.5 h-3.5" />
+                        )}
+                      </IconButton>
+                      <IconButton label="Obunani tahrirlash" size="sm" onClick={() => handleOpenEdit(sub)}>
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </IconButton>
+                      <IconButton
+                        label="Obunani oʻchirish"
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleDelete(sub.id)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </IconButton>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/[0.08] flex items-baseline justify-between">
+                    <span className="text-xs text-slate-500 dark:text-slate-400">Toʻlov summasi:</span>
+                    <span className="text-lg font-extrabold font-mono tabular-nums text-slate-900 dark:text-white">
+                      {formatMoney(sub.amount, sub.currency)}
+                    </span>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Valyuta
-                  </label>
-                  <select
-                    value={form.currency}
-                    onChange={(e) => setForm({ ...form, currency: e.target.value as CurrencyCode })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
-                  >
-                    <option value="UZS">UZS (Soʻm)</option>
-                    <option value="USD">USD ($)</option>
-                    <option value="EUR">EUR (€)</option>
-                    <option value="RUB">RUB (₽)</option>
-                  </select>
+                <div className="mt-4 pt-3 border-t border-dashed border-slate-200/70 dark:border-white/[0.08] flex items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 tabular-nums">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>{formatDateUz(sub.nextPaymentDate)}</span>
+                  </span>
+
+                  {sub.status === 'paused' ? (
+                    <Badge tone="neutral">Toʻxtatilgan</Badge>
+                  ) : isUrgent ? (
+                    <Badge tone="amber" className="tabular-nums">
+                      {daysLeft === 0 ? 'Bugun toʻlov kuni' : `${daysLeft} kundan soʻng`}
+                    </Badge>
+                  ) : isOverdue ? (
+                    <Badge tone="rose">Muddati oʻtgan</Badge>
+                  ) : (
+                    <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 tabular-nums">
+                      {daysLeft} kun qoldi
+                    </span>
+                  )}
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Toʻlov davriyligi
-                  </label>
-                  <select
-                    value={form.billingInterval}
-                    onChange={(e) => setForm({ ...form, billingInterval: e.target.value as BillingInterval })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
-                  >
-                    <option value="monthly">Har oy</option>
-                    <option value="yearly">Har yil</option>
-                    <option value="quarterly">Har 3 oyda</option>
-                    <option value="weekly">Har hafta</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Keyingi toʻlov sanasi
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={form.nextPaymentDate}
-                    onChange={(e) => setForm({ ...form, nextPaymentDate: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Izoh (ixtiyoriy)
-                </label>
-                <input
-                  type="text"
-                  placeholder="Karta raqami yoki tarif rejasi"
-                  value={form.notes}
-                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
-                />
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
-                >
-                  Bekor qilish
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs"
-                >
-                  Saqlash
-                </button>
-              </div>
-            </form>
-          </div>
+              </Card>
+            );
+          })}
         </div>
       )}
+
+      {/* Add / Edit Subscription Modal */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={editingSub ? 'Obunani tahrirlash' : 'Yangi obuna qoʻshish'}
+        size="md"
+      >
+        <form onSubmit={handleSave} className="space-y-4">
+          <Input
+            label="Xizmat nomi"
+            type="text"
+            required
+            placeholder="Masalan: Netflix, YouTube Premium, TPS Internet"
+            value={form.serviceName}
+            onChange={(e) => setForm({ ...form, serviceName: e.target.value })}
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Toʻlov summasi"
+              type="number"
+              step="any"
+              required
+              monospace
+              placeholder="0"
+              value={form.amount}
+              onChange={(e) => setForm({ ...form, amount: e.target.value })}
+            />
+
+            <Select
+              label="Valyuta"
+              value={form.currency}
+              onChange={(e) => setForm({ ...form, currency: e.target.value as CurrencyCode })}
+            >
+              <option value="UZS">UZS (Soʻm)</option>
+              <option value="USD">USD ($)</option>
+              <option value="EUR">EUR (€)</option>
+              <option value="RUB">RUB (₽)</option>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Select
+              label="Toʻlov davriyligi"
+              value={form.billingInterval}
+              onChange={(e) =>
+                setForm({ ...form, billingInterval: e.target.value as BillingInterval })
+              }
+            >
+              <option value="monthly">Har oy</option>
+              <option value="yearly">Har yil</option>
+              <option value="quarterly">Har 3 oyda</option>
+              <option value="weekly">Har hafta</option>
+            </Select>
+
+            <Input
+              label="Keyingi toʻlov sanasi"
+              type="date"
+              required
+              value={form.nextPaymentDate}
+              onChange={(e) => setForm({ ...form, nextPaymentDate: e.target.value })}
+            />
+          </div>
+
+          <Input
+            label="Izoh (ixtiyoriy)"
+            type="text"
+            placeholder="Karta raqami yoki tarif rejasi"
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          />
+
+          <div className="pt-2 flex justify-end gap-2.5">
+            <Button variant="ghost" size="md" onClick={() => setIsModalOpen(false)}>
+              Bekor qilish
+            </Button>
+            <Button type="submit" variant="primary" size="md" loading={saving}>
+              Saqlash
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

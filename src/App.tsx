@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext.tsx';
 import { Sidebar, NavTab } from './components/layout/Sidebar.tsx';
 import { Header } from './components/layout/Header.tsx';
+import { MobileBottomNav } from './components/layout/MobileBottomNav.tsx';
 import { DashboardView } from './components/views/DashboardView.tsx';
 import { IncomeView } from './components/views/IncomeView.tsx';
 import { ExpenseView } from './components/views/ExpenseView.tsx';
@@ -38,6 +39,16 @@ import { AuthModal } from './components/modals/AuthModal.tsx';
 import { VoiceTransactionModal } from './components/modals/VoiceTransactionModal.tsx';
 import { PremiumModal } from './components/modals/PremiumModal.tsx';
 
+import { ToastProvider, useToast, Drawer } from './design-system/index.ts';
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Mic,
+  Receipt,
+  Bot,
+  ArrowRightLeft,
+} from 'lucide-react';
+
 import {
   Transaction,
   Category,
@@ -51,8 +62,11 @@ import { api } from './services/api.ts';
 
 function MainApp() {
   const { user, loading: authLoading } = useAuth();
+  const toast = useToast();
+
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [quickAddSheetOpen, setQuickAddSheetOpen] = useState(false);
 
   // Core Data State
   const [summary, setSummary] = useState<FinancialSummary | null>(null);
@@ -62,6 +76,7 @@ function MainApp() {
   const [goals, setGoals] = useState<FinancialGoal[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
 
   // Modals state
   const [txModalOpen, setTxModalOpen] = useState(false);
@@ -69,7 +84,6 @@ function MainApp() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 
   const [voiceModalOpen, setVoiceModalOpen] = useState(false);
-
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
 
   const [budgetModalOpen, setBudgetModalOpen] = useState(false);
@@ -94,6 +108,7 @@ function MainApp() {
     if (!user) return;
     try {
       setDataLoading(true);
+      setDataError(null);
       const [sumRes, txRes, catRes, bdgRes, goalRes, debtRes] = await Promise.all([
         api.getSummary({ period: 'this_month' }),
         api.getTransactions(),
@@ -109,8 +124,9 @@ function MainApp() {
       setBudgets(bdgRes.budgets);
       setGoals(goalRes.goals);
       setDebts(debtRes.debts);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to load application data:', e);
+      setDataError(e?.message || 'Maʼlumotlarni yuklashda xatolik yuz berdi');
     } finally {
       setDataLoading(false);
     }
@@ -126,16 +142,28 @@ function MainApp() {
   const handleSaveTransaction = async (txData: Omit<Transaction, 'id' | 'userId' | 'createdAt'>) => {
     if (editingTx) {
       await api.updateTransaction(editingTx.id, txData);
+      toast.success('Tranzaksiya yangilandi');
     } else {
       await api.addTransaction(txData);
+      toast.success('Tranzaksiya saqlandi');
     }
     await refreshAllData();
   };
 
   const handleDeleteTransaction = async (id: string) => {
-    if (window.confirm('Haqiqatan ham ushbu tranzaksiyani oʻchirmoqchimisiz?')) {
+    const ok = await toast.confirm({
+      title: 'Tranzaksiyani oʻchirish',
+      message: 'Haqiqatan ham ushbu tranzaksiyani oʻchirmoqchimisiz? Bu amalni qaytarib boʻlmaydi.',
+      confirmLabel: 'Oʻchirish',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
       await api.deleteTransaction(id);
+      toast.success('Tranzaksiya oʻchirildi');
       await refreshAllData();
+    } catch (e: any) {
+      toast.error(e.message || 'Oʻchirishda xatolik yuz berdi');
     }
   };
 
@@ -144,18 +172,30 @@ function MainApp() {
     await api.addCategory(cat);
     const catRes = await api.getCategories();
     setCategories(catRes.categories);
+    toast.success('Yangi toifa qoʻshildi');
   };
 
   // Budget Actions
   const handleSaveBudget = async (budget: Omit<Budget, 'id' | 'userId'>) => {
     await api.setBudget(budget);
+    toast.success('Budjet limiti saqlandi');
     await refreshAllData();
   };
 
   const handleDeleteBudget = async (id: string) => {
-    if (window.confirm('Ushbu budjet limitini oʻchirmoqchimisiz?')) {
+    const ok = await toast.confirm({
+      title: 'Budjet limitini oʻchirish',
+      message: 'Ushbu toifa uchun belgilangan budjet limitini oʻchirmoqchimisiz?',
+      confirmLabel: 'Oʻchirish',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
       await api.deleteBudget(id);
+      toast.success('Budjet limiti oʻchirildi');
       await refreshAllData();
+    } catch (e: any) {
+      toast.error(e.message || 'Oʻchirishda xatolik yuz berdi');
     }
   };
 
@@ -163,21 +203,34 @@ function MainApp() {
   const handleSaveGoal = async (goal: Omit<FinancialGoal, 'id' | 'userId' | 'createdAt'>) => {
     if (editingGoal) {
       await api.updateGoal(editingGoal.id, goal);
+      toast.success('Jamgʻarma maqsadi yangilandi');
     } else {
       await api.addGoal(goal);
+      toast.success('Yangi jamgʻarma maqsadi yaratildi');
     }
     await refreshAllData();
   };
 
   const handleDepositGoal = async (goalId: string, amount: number) => {
     await api.depositToGoal(goalId, amount);
+    toast.success('Jamgʻarmaga mablagʻ qoʻshildi');
     await refreshAllData();
   };
 
   const handleDeleteGoal = async (id: string) => {
-    if (window.confirm('Ushbu maqsadni oʻchirmoqchimisiz?')) {
+    const ok = await toast.confirm({
+      title: 'Maqsadni oʻchirish',
+      message: 'Ushbu jamgʻarma maqsadini oʻchirmoqchimisiz?',
+      confirmLabel: 'Oʻchirish',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
       await api.deleteGoal(id);
+      toast.success('Maqsad oʻchirildi');
       await refreshAllData();
+    } catch (e: any) {
+      toast.error(e.message || 'Oʻchirishda xatolik yuz berdi');
     }
   };
 
@@ -185,38 +238,51 @@ function MainApp() {
   const handleSaveDebt = async (debt: Omit<Debt, 'id' | 'userId' | 'remainingAmount'>) => {
     if (editingDebt) {
       await api.updateDebt(editingDebt.id, debt);
+      toast.success('Qarz qaydnomasi yangilandi');
     } else {
       await api.addDebt(debt);
+      toast.success('Qarz qaydnomasi saqlandi');
     }
     await refreshAllData();
   };
 
   const handlePayDebt = async (debtId: string, amount: number) => {
     await api.payDebt(debtId, amount);
+    toast.success('Qarz toʻlovi qayd etildi');
     await refreshAllData();
   };
 
   const handleDeleteDebt = async (id: string) => {
-    if (window.confirm('Ushbu qarz qaydnomasini oʻchirmoqchimisiz?')) {
+    const ok = await toast.confirm({
+      title: 'Qarz qaydnomasini oʻchirish',
+      message: 'Ushbu qarz qaydnomasini oʻchirmoqchimisiz?',
+      confirmLabel: 'Oʻchirish',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
       await api.deleteDebt(id);
+      toast.success('Qarz qaydnomasi oʻchirildi');
       await refreshAllData();
+    } catch (e: any) {
+      toast.error(e.message || 'Oʻchirishda xatolik yuz berdi');
     }
   };
 
   if (authLoading) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
-        <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white font-extrabold flex items-center justify-center text-lg animate-pulse mb-3">
-          H
+      <div className="h-[100dvh] w-screen flex flex-col items-center justify-center bg-[#F4F7F8] dark:bg-[#081220] text-slate-900 dark:text-slate-100">
+        <div className="w-12 h-12 rounded-2xl bg-[#0D1927] border border-emerald-500/40 flex items-center justify-center shadow-[0_0_28px_rgba(16,185,129,0.25)] mb-3">
+          <div className="w-5 h-5 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin" />
         </div>
-        <div className="text-sm font-semibold tracking-tight">HISOBOT AI yuklanmoqda...</div>
+        <div className="text-sm font-bold tracking-tight">HISOBOT AI yuklanmoqda...</div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans">
-      {/* Sidebar Navigation */}
+    <div className="flex h-[100dvh] bg-[#F4F7F8] dark:bg-[#081220] text-[#0F172A] dark:text-slate-100 overflow-hidden font-sans">
+      {/* Desktop & Mobile Drawer Sidebar */}
       <Sidebar
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
@@ -228,7 +294,6 @@ function MainApp() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top Header */}
         <Header
           currentTab={currentTab}
           onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
@@ -238,20 +303,32 @@ function MainApp() {
             setTxModalOpen(true);
           }}
           onOpenVoiceModal={() => setVoiceModalOpen(true)}
-          onOpenAI={() => setCurrentTab('ai')}
           onNavigateTab={setCurrentTab}
           onOpenAuthModal={() => setAuthModalOpen(true)}
-          onOpenPremiumModal={() => setPremiumModalOpen(true)}
         />
 
         {/* View Content Viewport */}
-        <main className="flex-1 min-w-0 max-w-full overflow-y-auto overflow-x-hidden p-3 sm:p-6 lg:p-8">
+        <main className="flex-1 min-w-0 max-w-full overflow-y-auto overflow-x-hidden px-3.5 py-4 sm:p-6 lg:p-8 pb-24 lg:pb-8">
           <div className="w-full min-w-0 max-w-7xl mx-auto">
+            {dataError && (
+              <div className="mb-4 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between gap-3">
+                <span>{dataError}</span>
+                <button
+                  type="button"
+                  onClick={refreshAllData}
+                  className="px-3 py-1.5 rounded-lg bg-rose-600 text-white font-semibold shrink-0"
+                >
+                  Qayta urinish
+                </button>
+              </div>
+            )}
+
             {currentTab === 'dashboard' && (
               <DashboardView
                 summary={summary}
                 recentTransactions={transactions}
                 goals={goals}
+                loading={dataLoading && !summary}
                 onOpenVoiceModal={() => setVoiceModalOpen(true)}
                 onOpenPremiumModal={() => setPremiumModalOpen(true)}
                 onOpenTransactionModal={(type) => {
@@ -319,15 +396,10 @@ function MainApp() {
               />
             )}
 
-            {/* Expanded New Modules */}
             {currentTab === 'wallets' && <WalletsView />}
-
             {currentTab === 'family' && <FamilyView />}
-
             {currentTab === 'subscriptions' && <SubscriptionsView />}
-
             {currentTab === 'recurring' && <RecurringView />}
-
             {currentTab === 'receipts' && (
               <ReceiptScannerView
                 onTransactionSaved={() => {
@@ -335,16 +407,10 @@ function MainApp() {
                 }}
               />
             )}
-
             {currentTab === 'forecast' && <ForecastView />}
-
             {currentTab === 'currencies' && <CurrenciesView />}
-
             {currentTab === 'banks' && <BanksView />}
-
             {currentTab === 'telegram' && <TelegramView />}
-
-            {/* Reports & Planning */}
             {currentTab === 'reports' && <ReportsView />}
 
             {currentTab === 'budgets' && (
@@ -397,6 +463,129 @@ function MainApp() {
         </main>
       </div>
 
+      {/* Mobile Bottom Navigation */}
+      <MobileBottomNav
+        currentTab={currentTab}
+        onSelectTab={setCurrentTab}
+        onOpenQuickAdd={() => setQuickAddSheetOpen(true)}
+      />
+
+      {/* Mobile Quick Add Action Sheet */}
+      <Drawer
+        isOpen={quickAddSheetOpen}
+        onClose={() => setQuickAddSheetOpen(false)}
+        side="bottom"
+        title="Tezkor amal tanlang"
+      >
+        <div className="grid grid-cols-2 gap-3 pb-2">
+          <button
+            type="button"
+            onClick={() => {
+              setQuickAddSheetOpen(false);
+              setEditingTx(null);
+              setTxModalType('income');
+              setTxModalOpen(true);
+            }}
+            className="flex items-center gap-3 p-3.5 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 text-left"
+          >
+            <div className="w-10 h-10 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0">
+              <ArrowDownLeft className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-slate-900 dark:text-white">Kirim</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">Daromad kiritish</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setQuickAddSheetOpen(false);
+              setEditingTx(null);
+              setTxModalType('expense');
+              setTxModalOpen(true);
+            }}
+            className="flex items-center gap-3 p-3.5 rounded-2xl border border-rose-500/25 bg-rose-500/10 text-left"
+          >
+            <div className="w-10 h-10 rounded-xl bg-rose-500 text-white flex items-center justify-center shrink-0">
+              <ArrowUpRight className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-slate-900 dark:text-white">Chiqim</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">Xarajat yozish</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setQuickAddSheetOpen(false);
+              setVoiceModalOpen(true);
+            }}
+            className="flex items-center gap-3 p-3.5 rounded-2xl border border-cyan-500/25 bg-cyan-500/10 text-left"
+          >
+            <div className="w-10 h-10 rounded-xl bg-cyan-500 text-slate-950 flex items-center justify-center shrink-0">
+              <Mic className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-slate-900 dark:text-white">Ovoz bilan</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">AI ovozli kiritish</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setQuickAddSheetOpen(false);
+              setCurrentTab('receipts');
+            }}
+            className="flex items-center gap-3 p-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.10] bg-slate-50 dark:bg-white/[0.04] text-left"
+          >
+            <div className="w-10 h-10 rounded-xl bg-slate-900 dark:bg-white/10 text-white flex items-center justify-center shrink-0">
+              <Receipt className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-slate-900 dark:text-white">Chek skaner</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">OCR tahlili</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setQuickAddSheetOpen(false);
+              setCurrentTab('ai');
+            }}
+            className="flex items-center gap-3 p-3.5 rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.06] text-left"
+          >
+            <div className="w-10 h-10 rounded-xl bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0">
+              <Bot className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-slate-900 dark:text-white">AI Yordamchi</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">Savol va tahlil</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setQuickAddSheetOpen(false);
+              setCurrentTab('wallets');
+            }}
+            className="flex items-center gap-3 p-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.10] bg-slate-50 dark:bg-white/[0.04] text-left"
+          >
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <ArrowRightLeft className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-slate-900 dark:text-white">Oʻtkazma</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">Hamyonlar aro</div>
+            </div>
+          </button>
+        </div>
+      </Drawer>
+
       {/* Central Modals */}
       <TransactionModal
         isOpen={txModalOpen}
@@ -416,6 +605,7 @@ function MainApp() {
         onClose={() => setVoiceModalOpen(false)}
         categories={categories}
         onTransactionSaved={() => {
+          toast.success('Ovozli tranzaksiya saqlandi');
           refreshAllData();
         }}
       />
@@ -494,7 +684,9 @@ function MainApp() {
 export default function App() {
   return (
     <AuthProvider>
-      <MainApp />
+      <ToastProvider>
+        <MainApp />
+      </ToastProvider>
     </AuthProvider>
   );
 }

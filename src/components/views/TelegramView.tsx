@@ -3,33 +3,36 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Send,
-  CheckCircle2,
   Copy,
   Check,
   Bell,
-  ShieldCheck,
-  ExternalLink,
-  MessageSquare,
-  Smartphone,
-  RefreshCw,
 } from 'lucide-react';
 import { TelegramConnection } from '../../types/finance.ts';
 import { api } from '../../services/api.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
+import {
+  Badge,
+  Button,
+  Card,
+  Input,
+  Skeleton,
+  useToast,
+} from '../../design-system/index.ts';
 
 export const TelegramView: React.FC = () => {
   const { user } = useAuth();
+  const toast = useToast();
   const [connection, setConnection] = useState<TelegramConnection | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedCode, setCopiedCode] = useState(false);
   const [testSending, setTestSending] = useState(false);
-  const [testSuccess, setTestSuccess] = useState(false);
   const [usernameInput, setUsernameInput] = useState('');
+  const [connecting, setConnecting] = useState(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!user) return;
     try {
       setLoading(true);
@@ -40,18 +43,17 @@ export const TelegramView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
-    if (user) {
-      loadData();
-    }
-  }, [user]);
+    loadData();
+  }, [loadData]);
 
   const handleCopyCode = () => {
     if (!connection) return;
     navigator.clipboard.writeText(connection.connectCode);
     setCopiedCode(true);
+    toast.success('Bogʻlanish kodi nusxalandi');
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
@@ -64,20 +66,20 @@ export const TelegramView: React.FC = () => {
     try {
       const res = await api.updateTelegramPreferences(updated);
       setConnection(res.connection);
+      toast.success('Bildirishnoma sozlamasi yangilandi');
     } catch (e) {
       console.error('Failed to update preferences:', e);
+      toast.error('Sozlamani saqlashda xatolik');
     }
   };
 
   const handleTestSend = async () => {
     try {
       setTestSending(true);
-      setTestSuccess(false);
       await api.testSendTelegram();
-      setTestSuccess(true);
-      setTimeout(() => setTestSuccess(false), 4000);
+      toast.success('Sinov xabari Telegram bot simulyatoriga yuborildi');
     } catch (e: any) {
-      alert(e.message || 'Sinov xabari yuborilmadi');
+      toast.error(e?.message || 'Sinov xabari yuborilmadi');
     } finally {
       setTestSending(false);
     }
@@ -85,195 +87,215 @@ export const TelegramView: React.FC = () => {
 
   const handleConnectSimulate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!usernameInput) return;
+    if (!usernameInput.trim()) return;
     try {
-      const res = await api.connectTelegram(usernameInput);
+      setConnecting(true);
+      const res = await api.connectTelegram(usernameInput.trim().replace(/^@/, ''));
       setConnection(res.connection);
-    } catch (e) {
-      console.error(e);
+      setUsernameInput('');
+      toast.success('Telegram hisob ulandi');
+    } catch (e: any) {
+      toast.error(e?.message || 'Ulashda xatolik yuz berdi');
+    } finally {
+      setConnecting(false);
     }
   };
 
   const handleDisconnect = async () => {
-    if (confirm('Telegram bot ulanishini bekor qilmoqchimisiz?')) {
+    const confirmed = await toast.confirm({
+      title: 'Telegram ulanishini uzish',
+      message: 'Telegram bot ulanishini bekor qilmoqchimisiz?',
+      confirmLabel: 'Uzish',
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    try {
       const res = await api.disconnectTelegram();
       setConnection(res.connection);
+      toast.info('Telegram ulanishi bekor qilindi');
+    } catch (e: any) {
+      toast.error(e?.message || 'Xatolik yuz berdi');
     }
   };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-44 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
-            Telegram Bot Integratsiyasi
+          <h2 className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 dark:text-white text-balance">
+            Telegram bot integratsiyasi
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Xarajatlar, obunalar va kunlik hisobotlarni Telegram orqali qabul qiling va boshqaring
+            Xarajatlar, obunalar va kunlik hisobotlarni Telegram orqali boshqaring
           </p>
         </div>
 
         {connection?.isConnected && (
-          <button
+          <Button
+            variant="primary"
+            size="sm"
+            loading={testSending}
+            leadingIcon={<Send className="w-3.5 h-3.5" />}
             onClick={handleTestSend}
-            disabled={testSending}
-            className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl transition-colors shadow-xs"
           >
-            <Send className="w-3.5 h-3.5" />
-            <span>{testSending ? 'Yuborilmoqda...' : 'Sinov xabari yuborish'}</span>
-          </button>
+            {testSending ? 'Yuborilmoqda...' : 'Sinov xabari yuborish'}
+          </Button>
         )}
       </div>
 
-      {testSuccess && (
-        <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          <span>Sinov xabari Telegram orqali muvaffaqiyatli joʻnatildi!</span>
-        </div>
-      )}
-
-      {/* Main Connection Card */}
-      <div className="p-6 rounded-2xl bg-gradient-to-r from-blue-600 via-sky-600 to-indigo-600 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white">
-              Rasmiy Bot
-            </span>
-            <span className="text-xs text-blue-100 font-semibold font-mono">
-              @HisobotAIBot
-            </span>
+      {/* Main Connection Card — Deep Navy + Emerald/Teal */}
+      <section className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-[#081220] via-[#0B2D36] to-[#0D4A43] text-white border border-emerald-500/25 shadow-[0_12px_32px_rgba(6,182,212,0.14)] flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <Badge tone="teal">Telegram Bot</Badge>
+            <span className="text-xs text-cyan-200 font-semibold font-mono">@HisobotAIBot</span>
           </div>
 
-          <h3 className="text-2xl font-extrabold tracking-tight">
+          <h3 className="text-xl sm:text-2xl font-extrabold tracking-tight text-balance">
             Telegram orqali moliyangiz doim qoʻl ostida
           </h3>
-          <p className="text-xs text-blue-100 mt-1 max-w-lg leading-relaxed">
-            Har safar xarid qilganingizda chek rasmini botga yuborishingiz yoki ovozli xabar qoldirishingiz mumkin.
+          <p className="text-xs text-slate-200 mt-1.5 max-w-lg leading-relaxed">
+            Xarid chekini yuborish, kunlik sarhisob va budjet ogohlantirishlarini qabul qilish uchun botni hisobingizga bogʻlang.
           </p>
         </div>
 
         {connection?.isConnected ? (
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/20 text-xs shrink-0 min-w-[240px]">
-            <div className="flex items-center gap-2 text-emerald-300 font-bold mb-1">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Ulangan: @{connection.telegramUsername}</span>
+          <div className="bg-white/[0.08] rounded-2xl p-4 border border-white/[0.14] text-xs shrink-0 md:min-w-[250px] space-y-2.5">
+            <div className="text-emerald-300 font-bold">
+              Ulangan: @{connection.telegramUsername}
             </div>
-            <div className="text-[11px] text-blue-100 mb-3">
-              Hisobingiz muvaffaqiyatli bogʻlangan
+            <div className="text-[11px] text-slate-300">
+              Hisobingiz bot bilan bogʻlangan
             </div>
-            <button
+            <Button
+              variant="danger"
+              size="sm"
+              fullWidth
               onClick={handleDisconnect}
-              className="w-full py-1.5 px-3 bg-white/20 hover:bg-rose-500/80 text-white rounded-xl text-xs font-semibold transition-colors"
             >
               Ulanishni uzish
-            </button>
+            </Button>
           </div>
         ) : (
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/20 text-xs shrink-0 min-w-[260px]">
-            <span className="text-[11px] text-blue-200 block mb-1">Bogʻlanish kodi:</span>
-            <div className="flex items-center justify-between bg-black/20 p-2 rounded-xl mb-2">
-              <code className="text-base font-mono font-extrabold tracking-wider">
+          <div className="bg-white/[0.08] rounded-2xl p-4 border border-white/[0.14] text-xs shrink-0 md:min-w-[260px]">
+            <span className="text-[11px] text-cyan-200 block mb-1.5">Bogʻlanish kodi:</span>
+            <div className="flex items-center justify-between bg-black/25 px-3 py-2 rounded-xl mb-2">
+              <code className="text-base font-mono font-extrabold tracking-wider text-emerald-300">
                 {connection?.connectCode || 'HISOBOT-2026'}
               </code>
               <button
+                type="button"
+                aria-label="Kodni nusxalash"
                 onClick={handleCopyCode}
-                className="p-1 rounded text-blue-200 hover:text-white"
-                title="Nusxalash"
+                className="p-1.5 rounded-lg text-slate-300 hover:text-white cursor-pointer"
               >
-                {copiedCode ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                {copiedCode ? (
+                  <Check className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
               </button>
             </div>
-            <div className="text-[10px] text-blue-200">
-              Botga kirib <code>/start {connection?.connectCode}</code> buyrugʻini yuboring.
+            <div className="text-[11px] text-slate-300">
+              Botga <code className="font-mono text-white">/start {connection?.connectCode}</code> buyrugʻini yuboring.
             </div>
           </div>
         )}
-      </div>
+      </section>
 
-      {/* Manual fast link for demo */}
+      {/* Manual Fast Link for Demo */}
       {!connection?.isConnected && (
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 mb-2">
-            Tezkor simulyatsiya: Telegram profilingizni kiriting
+        <Card padding="lg">
+          <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-2">
+            Tezkor sinov ulanishi: Telegram foydalanuvchi nomingizni kiriting
           </h3>
-          <form onSubmit={handleConnectSimulate} className="flex gap-2 max-w-md">
-            <input
-              type="text"
-              required
-              placeholder="Masalan: alisher_uz"
-              value={usernameInput}
-              onChange={(e) => setUsernameInput(e.target.value)}
-              className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
-            />
-            <button
-              type="submit"
-              className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl"
-            >
+          <form onSubmit={handleConnectSimulate} className="flex flex-col sm:flex-row gap-2.5 max-w-md">
+            <div className="flex-1">
+              <Input
+                type="text"
+                required
+                placeholder="Masalan: alisher_uz"
+                value={usernameInput}
+                onChange={(e) => setUsernameInput(e.target.value)}
+              />
+            </div>
+            <Button type="submit" variant="primary" size="md" loading={connecting}>
               Ulash
-            </button>
+            </Button>
           </form>
-        </div>
+        </Card>
       )}
 
       {/* Notification Preferences */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs">
-        <div className="flex items-center gap-2 pb-4 border-b border-slate-100 dark:border-slate-800 mb-4">
-          <Bell className="w-5 h-5 text-blue-600" />
-          <h3 className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
-            Bildirishnomalar Sozlamalari
+      <Card padding="lg">
+        <div className="flex items-center gap-2 pb-4 border-b border-slate-100 dark:border-white/[0.08] mb-2">
+          <Bell className="w-5 h-5 text-emerald-500" />
+          <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+            Bildirishnomalar sozlamalari
           </h3>
         </div>
 
-        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+        <div className="divide-y divide-slate-100 dark:divide-white/[0.06]">
           {[
             {
               key: 'dailyReport' as const,
               title: 'Kunlik yakuniy hisobot',
-              desc: 'Har kuni soat 21:00 da kun davomidagi xarajatlar va daromadlar umumiy xulosasi',
+              desc: 'Har kuni soat 21:00 da kun davomidagi xarajatlar va daromadlar xulosasi',
             },
             {
               key: 'weeklyReport' as const,
               title: 'Haftalik moliyaviy tahlil',
-              desc: 'Har yakshanba kechqurun hafta davomida tejab qolingan mablagʻ va toifalar kesimi',
+              desc: 'Har yakshanba kechqurun haftalik sarf va tejamkorlik tahlili',
             },
             {
               key: 'budgetAlerts' as const,
               title: 'Budjet chegarasidan oshish xavfi',
-              desc: 'Kategoriya budjeti 80% va 100% ga yetganda darhol ogohlantirish xabari',
+              desc: 'Kategoriya budjeti 80% va 100% ga yetganda ogohlantirish',
             },
             {
               key: 'subscriptionAlerts' as const,
               title: 'Yaqinlashayotgan obuna toʻlovlari',
-              desc: 'Obuna muddati tugashiga 3 kun va 1 kun qolganda eslatma yuborish',
+              desc: 'Obuna muddati tugashiga 3 kun va 1 kun qolganda eslatma',
             },
           ].map((item) => {
             const isChecked = connection?.preferences[item.key] ?? false;
             return (
               <div key={item.key} className="py-3.5 flex items-center justify-between gap-4">
-                <div>
-                  <div className="font-semibold text-xs text-slate-900 dark:text-slate-100">
+                <div className="min-w-0">
+                  <div className="font-semibold text-xs text-slate-900 dark:text-white">
                     {item.title}
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                     {item.desc}
                   </div>
                 </div>
 
-                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <label className="relative inline-flex items-center cursor-pointer shrink-0 min-h-11 px-1">
                   <input
                     type="checkbox"
                     checked={isChecked}
                     onChange={() => handleTogglePref(item.key)}
+                    aria-label={item.title}
                     className="sr-only peer"
                   />
-                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-hidden rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-blue-600" />
+                  <div className="w-10 h-5 bg-slate-200 dark:bg-white/[0.14] peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-500 rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[6px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:bg-emerald-500" />
                 </label>
               </div>
             );
           })}
         </div>
-      </div>
+      </Card>
     </div>
   );
 };

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   LayoutDashboard,
   ArrowDownLeft,
@@ -16,7 +16,6 @@ import {
   Settings,
   LogOut,
   X,
-  ChevronRight,
   Wallet,
   Users,
   Clock,
@@ -27,7 +26,7 @@ import {
   Building2,
   Send,
   Crown,
-  Sparkles,
+  ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.tsx';
 
@@ -70,47 +69,50 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { user, logout } = useAuth();
 
-  // The 15 core requested navigation items
+  useEffect(() => {
+    if (!isOpenMobile) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCloseMobile();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpenMobile, onCloseMobile]);
+
   const navSections: {
     title: string;
-    items: { id: NavTab; label: string; icon: React.ElementType; badge?: string }[];
+    items: { id: NavTab; label: string; icon: React.ElementType; isAi?: boolean }[];
   }[] = [
     {
-      title: 'Asosiy',
+      title: 'Boshqaruv',
       items: [
         { id: 'dashboard', label: 'Bosh sahifa', icon: LayoutDashboard },
         { id: 'income', label: 'Kirimlar', icon: ArrowDownLeft },
         { id: 'expense', label: 'Chiqimlar', icon: ArrowUpRight },
-        { id: 'ai', label: 'AI Financial Brain', icon: Bot, badge: 'Aqlli' },
-        { id: 'wallets', label: 'Hamyonlar va Kartalar', icon: Wallet },
+        { id: 'wallets', label: 'Hamyonlar', icon: Wallet },
+        { id: 'ai', label: 'AI Yordamchi', icon: Bot, isAi: true },
       ],
     },
     {
-      title: 'Moliya va Rejalashtirish',
-      items: [
-        { id: 'family', label: 'Oilaviy budjet', icon: Users },
-        { id: 'subscriptions', label: 'Muntazam obunalar', icon: Clock },
-        { id: 'recurring', label: 'Avtomatik toʻlovlar', icon: Repeat },
-        { id: 'receipts', label: 'Chek skaneri (OCR)', icon: Receipt, badge: 'Yangi' },
-        { id: 'forecast', label: 'AI Prognozlash', icon: TrendingUp },
-      ],
-    },
-    {
-      title: 'Integratsiyalar va Tahlil',
-      items: [
-        { id: 'currencies', label: 'Valyuta kurslari', icon: Coins },
-        { id: 'banks', label: 'Banklar va Import', icon: Building2 },
-        { id: 'reports', label: 'Hisobotlar va Eksport', icon: BarChart3 },
-        { id: 'telegram', label: 'Telegram Bot', icon: Send },
-        { id: 'settings', label: 'Sozlamalar', icon: Settings },
-      ],
-    },
-    {
-      title: 'Boshqa boʻlimlar',
+      title: 'Reja va Moliya',
       items: [
         { id: 'budgets', label: 'Budjet limitlari', icon: PieChart },
-        { id: 'goals', label: 'Jamgʻarma maqsadlari', icon: Target },
+        { id: 'goals', label: 'Maqsadlar', icon: Target },
         { id: 'debts', label: 'Qarzlar daftari', icon: HandCoins },
+        { id: 'family', label: 'Oilaviy budjet', icon: Users },
+        { id: 'subscriptions', label: 'Obunalar', icon: Clock },
+        { id: 'recurring', label: 'Avtomatik toʻlovlar', icon: Repeat },
+      ],
+    },
+    {
+      title: 'Tahlil va Tizim',
+      items: [
+        { id: 'reports', label: 'Hisobotlar', icon: BarChart3 },
+        { id: 'forecast', label: 'AI Prognoz', icon: TrendingUp, isAi: true },
+        { id: 'receipts', label: 'Chek skaneri', icon: Receipt },
+        { id: 'currencies', label: 'Valyuta kurslari', icon: Coins },
+        { id: 'banks', label: 'Banklar va Import', icon: Building2 },
+        { id: 'telegram', label: 'Telegram Bot', icon: Send },
+        { id: 'settings', label: 'Sozlamalar', icon: Settings },
       ],
     },
   ];
@@ -122,86 +124,108 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {/* Mobile backdrop */}
       {isOpenMobile && (
         <div
+          aria-hidden="true"
           onClick={onCloseMobile}
-          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs lg:hidden"
+          className="fixed inset-0 z-40 bg-[#081220]/65 backdrop-blur-xs lg:hidden"
         />
       )}
 
-      {/* Sidebar container */}
       <aside
-        className={`fixed lg:static top-0 bottom-0 left-0 z-40 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between transition-transform duration-300 ease-in-out shrink-0 ${
+        aria-label="Asosiy navigatsiya"
+        className={`fixed lg:static top-0 bottom-0 left-0 z-50 lg:z-20 w-[272px] lg:w-64 bg-white dark:bg-[#0D1927] border-r border-slate-200/85 dark:border-white/[0.08] flex flex-col justify-between transition-transform duration-200 ease-out shrink-0 ${
           isOpenMobile ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
-        {/* Top: Brand Header */}
         <div className="flex flex-col h-full min-h-0">
-          <div className="h-16 px-5 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-blue-600 text-white font-extrabold flex items-center justify-center text-base shadow-sm">
-                H
+          {/* Brand Header */}
+          <div className="h-16 px-5 flex items-center justify-between border-b border-slate-200/80 dark:border-white/[0.07] shrink-0">
+            <button
+              type="button"
+              onClick={() => handleNavClick('dashboard')}
+              className="flex items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded-xl p-1 -ml-1 cursor-pointer"
+            >
+              <div className="w-9 h-9 rounded-xl bg-[#081220] border border-emerald-500/35 flex items-center justify-center shrink-0">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <rect x="3" y="13" width="3.5" height="7" rx="1.2" fill="#10B981" opacity="0.75" />
+                  <rect x="8.5" y="9" width="3.5" height="11" rx="1.2" fill="#10B981" />
+                  <rect x="14" y="5" width="3.5" height="15" rx="1.2" fill="#06B6D4" />
+                  <path
+                    d="M3.5 10.5L9.5 6.5L15 3.5L20 2.5"
+                    stroke="#34D399"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               </div>
-              <div>
-                <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white block leading-tight">
+              <div className="min-w-0">
+                <span className="font-extrabold text-[15px] tracking-tight text-slate-900 dark:text-white block leading-none whitespace-nowrap">
                   HISOBOT AI
                 </span>
-                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium tracking-tight">
-                  Moliyangizni aqlli boshqaring
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium block mt-1 truncate">
+                  Smart money. Clear future.
                 </span>
               </div>
-            </div>
+            </button>
+
             <button
+              type="button"
+              aria-label="Menyuni yopish"
               onClick={onCloseMobile}
-              className="lg:hidden p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              className="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.08]"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Nav links scrollable viewport */}
-          <nav className="flex-1 overflow-y-auto p-3 space-y-4">
-            {navSections.map((sec, sIdx) => (
-              <div key={sIdx} className="space-y-1">
-                <div className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          {/* Navigation Sections */}
+          <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+            {navSections.map((sec) => (
+              <div key={sec.title} className="space-y-1">
+                <div className="px-3 pb-1 text-[11px] font-semibold tracking-wide text-slate-400 dark:text-slate-500">
                   {sec.title}
                 </div>
                 {sec.items.map((item) => {
                   const Icon = item.icon;
                   const isActive = currentTab === item.id;
-                  const isAi = item.id === 'ai';
 
                   return (
                     <button
+                      type="button"
                       key={item.id}
                       onClick={() => handleNavClick(item.id)}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all group ${
+                      aria-current={isActive ? 'page' : undefined}
+                      className={`w-full min-h-10 flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] transition-colors duration-150 cursor-pointer relative ${
                         isActive
-                          ? isAi
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
-                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                          ? item.isAi
+                            ? 'bg-cyan-500/12 text-cyan-800 dark:text-cyan-300 font-semibold'
+                            : 'bg-emerald-500/12 text-emerald-800 dark:text-emerald-300 font-semibold'
+                          : 'text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-100/80 dark:hover:bg-white/[0.05] hover:text-slate-900 dark:hover:text-slate-100'
                       }`}
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Icon
-                          className={`w-4 h-4 shrink-0 transition-transform group-hover:scale-110 ${
-                            isActive
-                              ? 'text-current'
-                              : isAi
-                              ? 'text-blue-600 dark:text-blue-400'
-                              : 'text-slate-400 dark:text-slate-500'
+                      {isActive && (
+                        <span
+                          aria-hidden="true"
+                          className={`absolute left-0.5 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full ${
+                            item.isAi ? 'bg-cyan-500' : 'bg-emerald-500'
                           }`}
                         />
-                        <span className="truncate">{item.label}</span>
-                      </div>
-                      {item.badge && !isActive && (
-                        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 shrink-0">
-                          {item.badge}
-                        </span>
                       )}
-                      {isActive && <ChevronRight className="w-3.5 h-3.5 opacity-70 shrink-0" />}
+
+                      <Icon
+                        className={`w-[18px] h-[18px] shrink-0 ${
+                          isActive
+                            ? item.isAi
+                              ? 'text-cyan-600 dark:text-cyan-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                            : item.isAi
+                            ? 'text-cyan-600/80 dark:text-cyan-400/80'
+                            : 'text-slate-400 dark:text-slate-500'
+                        }`}
+                      />
+                      <span className="truncate whitespace-nowrap">{item.label}</span>
                     </button>
                   );
                 })}
@@ -209,84 +233,85 @@ export const Sidebar: React.FC<SidebarProps> = ({
             ))}
           </nav>
 
-          {/* Premium Plan Card */}
-          {onOpenPremiumModal && (
-            <div className="px-3 pb-2 shrink-0">
-              <div
-                onClick={onOpenPremiumModal}
-                className={`p-3 rounded-2xl cursor-pointer transition-all duration-200 border relative overflow-hidden group ${
-                  user?.isPremium
-                    ? 'bg-gradient-to-br from-amber-500/10 via-yellow-500/10 to-amber-600/15 border-amber-400/40 hover:border-amber-400/70 dark:bg-amber-950/20'
-                    : 'bg-gradient-to-br from-blue-600/10 via-indigo-600/10 to-purple-600/10 border-blue-500/20 hover:border-blue-500/50 dark:bg-slate-800/80'
-                }`}
+          {/* Calm Bottom Dock: Subscription Link + User Account */}
+          <div className="p-3 border-t border-slate-200/80 dark:border-white/[0.07] space-y-2 shrink-0 pb-safe lg:pb-3">
+            {onOpenPremiumModal && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenPremiumModal();
+                  onCloseMobile();
+                }}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200/85 dark:border-white/[0.08] bg-slate-50/75 dark:bg-white/[0.03] hover:border-amber-500/40 transition-colors flex items-center justify-between gap-2 text-left cursor-pointer group"
               >
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <div className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 ${
-                      user?.isPremium ? 'bg-amber-500 text-white' : 'bg-blue-600 text-white'
-                    }`}>
-                      <Crown className="w-3 h-3 fill-current" />
-                    </div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-white">
-                      {user?.isPremium ? `HISOBOT ${user.premiumPlan?.toUpperCase() || 'PRO'}` : 'HISOBOT AI Pro'}
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                      user?.isPremium
+                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-300'
+                        : 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400'
+                    }`}
+                  >
+                    <Crown className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-xs font-semibold text-slate-900 dark:text-white block truncate">
+                      {user?.isPremium
+                        ? `HISOBOT ${user.premiumPlan?.toUpperCase() || 'PRO'}`
+                        : 'HISOBOT Pro'}
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block truncate">
+                      {user?.isPremium ? 'Obuna faol' : 'Tariflarni koʻrish'}
                     </span>
                   </div>
-                  <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md tracking-wider ${
-                    user?.isPremium
-                      ? 'bg-amber-400 text-amber-950'
-                      : 'bg-blue-600 text-white'
-                  }`}>
-                    {user?.isPremium ? 'Faol' : 'Tariflar'}
-                  </span>
                 </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mb-2">
-                  {user?.isPremium
-                    ? 'Barcha AI va kengaytirilgan vositalar ochiq.'
-                    : 'Cheksiz AI tahlil, OCR skaner va 10 ta hamyon.'}
-                </p>
-                <div className="flex items-center justify-between text-[11px] font-bold text-blue-600 dark:text-blue-400 group-hover:underline">
-                  <span>{user?.isPremium ? 'Obuna holatini koʻrish' : '39 000 soʻm/oydan'}</span>
-                  <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-                </div>
-              </div>
-            </div>
-          )}
+                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+              </button>
+            )}
 
-          {/* Bottom: User Profile / Auth */}
-          <div className="p-3 border-t border-slate-200 dark:border-slate-800 shrink-0">
             {user ? (
-              <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
+              <div className="p-2 rounded-xl bg-slate-50/75 dark:bg-white/[0.03] border border-slate-200/75 dark:border-white/[0.07] flex items-center justify-between gap-2">
                 <button
+                  type="button"
                   onClick={() => handleNavClick('settings')}
-                  className="flex items-center gap-2.5 text-left overflow-hidden flex-1 group"
+                  className="flex items-center gap-2.5 text-left overflow-hidden flex-1 group cursor-pointer"
                 >
                   <img
                     src={user.avatarUrl || '/src/assets/images/avatar_user_profile_1794280921902.jpg'}
                     alt={user.fullName}
                     referrerPolicy="no-referrer"
-                    className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                    className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200 dark:border-white/15"
                   />
-                  <div className="overflow-hidden">
-                    <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                  <div className="overflow-hidden min-w-0">
+                    <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                       {user.fullName}
                     </div>
-                    <div className="text-[11px] text-slate-400 dark:text-slate-500 truncate">
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                       {user.email}
                     </div>
                   </div>
                 </button>
                 <button
+                  type="button"
                   onClick={logout}
+                  aria-label="Tizimdan chiqish"
                   title="Tizimdan chiqish"
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200/50 dark:hover:bg-slate-700 transition-colors shrink-0"
+                  className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200/60 dark:hover:bg-white/[0.08] transition-colors shrink-0 cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
               </div>
             ) : (
               <button
-                onClick={onOpenAuthModal}
-                className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all"
+                type="button"
+                onClick={() => {
+                  onOpenAuthModal();
+                  onCloseMobile();
+                }}
+                className="w-full min-h-10 px-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
                 Kirish / Roʻyxatdan oʻtish
               </button>

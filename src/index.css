@@ -10,10 +10,19 @@
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    background-color: var(--hai-bg);
+    color: var(--hai-text);
   }
 
   body {
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background-color: var(--hai-bg);
+    color: var(--hai-text);
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3 {
+    text-wrap: balance;
   }
 
   button, input, textarea, select {
@@ -21,16 +30,22 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--hai-teal);
+    outline: 2px solid var(--hai-brand);
     outline-offset: 2px;
   }
 
-  .font-mono, [class*="tabular-nums"] {
-    font-family: "JetBrains Mono", monospace;
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1, "cv05" 1;
+  }
+
+  .font-mono {
+    font-family: "JetBrains Mono", "Inter", monospace;
+    font-variant-numeric: tabular-nums;
   }
 }
 
-/* Custom smooth scrollbar */
+/* Custom subtle scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -39,15 +54,15 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.4);
+  background: rgba(148, 163, 184, 0.35);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.6);
+  background: rgba(100, 116, 139, 0.55);
 }
 .dark ::-webkit-scrollbar-thumb {
-  background: rgba(71, 85, 105, 0.5);
+  background: rgba(148, 163, 184, 0.25);
 }
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.8);
+  background: rgba(148, 163, 184, 0.45);
 }

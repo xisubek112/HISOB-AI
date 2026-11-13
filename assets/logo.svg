@@ -1,37 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-<defs>
-  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#10052e"/><stop offset=".52" stop-color="#071b58"/><stop offset="1" stop-color="#050817"/></linearGradient>
-  <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#a100ff"/><stop offset=".5" stop-color="#1688ff"/><stop offset="1" stop-color="#d52cff"/></linearGradient>
-  <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff4a8"/><stop offset=".5" stop-color="#ffb900"/><stop offset="1" stop-color="#ff7a00"/></linearGradient>
-  <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#b8caff"/></linearGradient>
-  <linearGradient id="green" x1="0" y1="1" x2="0" y2="0"><stop stop-color="#00b887"/><stop offset="1" stop-color="#67ff9c"/></linearGradient>
-  <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e55cff"/><stop offset="1" stop-color="#4427ff"/></linearGradient>
-  <filter id="glow"><feGaussianBlur stdDeviation="12" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-  <filter id="shadow"><feGaussianBlur stdDeviation="18"/></filter>
-</defs>
-<rect x="18" y="18" width="988" height="988" rx="220" fill="url(#bg)"/>
-<rect x="20" y="20" width="984" height="984" rx="218" fill="none" stroke="url(#edge)" stroke-width="16"/>
-<ellipse cx="510" cy="525" rx="360" ry="245" fill="#6a20ff" opacity=".15" filter="url(#shadow)"/>
-<!-- crowned finance report -->
-<path d="M345 238 L405 166 L485 222 L550 145 L615 222 L695 166 L735 250 L705 290 L370 290Z" fill="url(#gold)" stroke="#ffeaa0" stroke-width="12" stroke-linejoin="round"/>
-<circle cx="405" cy="166" r="20" fill="#fff2a3"/><circle cx="550" cy="145" r="22" fill="#fff2a3"/><circle cx="695" cy="166" r="20" fill="#fff2a3"/>
-<rect x="250" y="265" width="510" height="490" rx="66" fill="url(#paper)" stroke="#e4e7ff" stroke-width="12" transform="rotate(-7 505 510)"/>
-<circle cx="420" cy="450" r="112" fill="#176cff"/>
-<path d="M420 338 A112 112 0 0 1 519 501 L420 450Z" fill="#a328ff"/>
-<path d="M420 450 L519 501 A112 112 0 0 1 420 562Z" fill="#4d35ff"/>
-<rect x="555" y="355" width="130" height="22" rx="11" fill="#7466d9"/>
-<rect x="555" y="405" width="155" height="22" rx="11" fill="#8d83df"/>
-<rect x="555" y="455" width="120" height="22" rx="11" fill="#8d83df"/>
-<!-- rising bars -->
-<rect x="300" y="630" width="92" height="130" rx="22" fill="url(#green)"/>
-<rect x="410" y="575" width="92" height="185" rx="22" fill="url(#green)"/>
-<rect x="520" y="515" width="92" height="245" rx="22" fill="url(#green)"/>
-<rect x="630" y="455" width="92" height="305" rx="22" fill="url(#green)"/>
-<path d="M310 590 Q440 560 535 470 T730 310" fill="none" stroke="#45ff9a" stroke-width="28" stroke-linecap="round" filter="url(#glow)"/>
-<path d="M682 315 L755 292 L746 372" fill="none" stroke="#65ffae" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
-<!-- AI chip -->
-<rect x="745" y="650" width="170" height="170" rx="38" fill="#180c4a" stroke="url(#violet)" stroke-width="18"/>
-<g stroke="#bd6bff" stroke-width="16" stroke-linecap="round"><path d="M780 625v25 M835 625v25 M890 625v25 M780 820v25 M835 820v25 M890 820v25 M720 690h25 M720 745h25 M720 800h25 M915 690h25 M915 745h25 M915 800h25"/></g>
-<text x="830" y="765" text-anchor="middle" font-family="Arial,sans-serif" font-size="78" font-weight="800" fill="#fff">AI</text>
-<path d="M130 850 Q512 1010 895 850" fill="none" stroke="url(#edge)" stroke-width="18" stroke-linecap="round" opacity=".9"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="haiBg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0D1927" />
+      <stop offset="100%" stop-color="#081220" />
+    </linearGradient>
+    <linearGradient id="haiBorder" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.55" />
+      <stop offset="50%" stop-color="#06B6D4" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#10B981" stop-opacity="0.55" />
+    </linearGradient>
+    <linearGradient id="haiBar" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+    <linearGradient id="haiLine" x1="96" y1="300" x2="416" y2="116" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#06B6D4" />
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="120" fill="url(#haiBg)" stroke="url(#haiBorder)" stroke-width="10" />
+  <circle cx="380" cy="128" r="120" fill="#10B981" fill-opacity="0.12" />
+  <rect x="108" y="292" width="60" height="108" rx="18" fill="url(#haiBar)" fill-opacity="0.78" />
+  <rect x="190" y="248" width="60" height="152" rx="18" fill="url(#haiBar)" fill-opacity="0.9" />
+  <rect x="272" y="196" width="60" height="204" rx="18" fill="url(#haiBar)" />
+  <rect x="354" y="152" width="60" height="248" rx="18" fill="#06B6D4" fill-opacity="0.92" />
+  <path d="M112 248C178 242 232 204 294 156L378 98" stroke="url(#haiLine)" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M330 92H386V148" stroke="#34D399" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" />
 </svg>

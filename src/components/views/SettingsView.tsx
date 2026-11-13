@@ -3,14 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   User,
   Shield,
   Bell,
-  Palette,
-  DollarSign,
-  Lock,
   CheckCircle2,
   AlertCircle,
   Sun,
@@ -22,29 +19,39 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { api } from '../../services/api.ts';
-
 import { CurrencyCode } from '../../types/finance.ts';
+import {
+  Badge,
+  Button,
+  Card,
+  Input,
+  Select,
+  useToast,
+} from '../../design-system/index.ts';
 
 interface SettingsViewProps {
   onOpenPremiumModal?: () => void;
 }
 
+const formatUzNumber = (num: number) =>
+  new Intl.NumberFormat('uz-UZ').format(num).replace(/,/g, ' ');
+
 export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }) => {
   const { user, updateUser, theme, toggleTheme } = useAuth();
+  const toast = useToast();
+  const [avatarError, setAvatarError] = useState(false);
 
   const [fullName, setFullName] = useState(user?.fullName || '');
   const [currency, setCurrency] = useState<CurrencyCode>(user?.currency || 'UZS');
   const [monthlyBudget, setMonthlyBudget] = useState(
-    user ? new Intl.NumberFormat('uz-UZ').format(user.monthlyBudget).replace(/,/g, ' ') : ''
+    user ? formatUzNumber(user.monthlyBudget) : ''
   );
 
-  // Notification toggles
   const [budgetAlerts, setBudgetAlerts] = useState(user?.notificationPrefs?.budgetAlerts ?? true);
   const [debtReminders, setDebtReminders] = useState(user?.notificationPrefs?.debtReminders ?? true);
   const [goalMilestones, setGoalMilestones] = useState(user?.notificationPrefs?.goalMilestones ?? true);
   const [weeklySummary, setWeeklySummary] = useState(user?.notificationPrefs?.weeklySummary ?? true);
 
-  // Password change state
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -53,6 +60,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
   const [changingPass, setChangingPass] = useState(false);
   const [profileNotice, setProfileNotice] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [passNotice, setPassNotice] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    setFullName(user.fullName || '');
+    setCurrency(user.currency || 'UZS');
+    setMonthlyBudget(user.monthlyBudget ? formatUzNumber(user.monthlyBudget) : '');
+    setBudgetAlerts(user.notificationPrefs?.budgetAlerts ?? true);
+    setDebtReminders(user.notificationPrefs?.debtReminders ?? true);
+    setGoalMilestones(user.notificationPrefs?.goalMilestones ?? true);
+    setWeeklySummary(user.notificationPrefs?.weeklySummary ?? true);
+  }, [user]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,8 +91,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
         },
       });
       setProfileNotice({ type: 'success', msg: 'Sozlamalar muvaffaqiyatli saqlandi!' });
+      toast.success('Profil sozlamalari saqlandi');
     } catch (err: any) {
-      setProfileNotice({ type: 'error', msg: err.message || 'Xatolik yuz berdi' });
+      const msg = err?.message || 'Xatolik yuz berdi';
+      setProfileNotice({ type: 'error', msg });
+      toast.error(msg);
     } finally {
       setSavingProfile(false);
     }
@@ -97,11 +118,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
     try {
       await api.changePassword(oldPassword, newPassword);
       setPassNotice({ type: 'success', msg: 'Parol muvaffaqiyatli yangilandi!' });
+      toast.success('Parol yangilandi');
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (err: any) {
-      setPassNotice({ type: 'error', msg: err.message || 'Parolni oʻzgartirishda xatolik' });
+      setPassNotice({ type: 'error', msg: err?.message || 'Parolni oʻzgartirishda xatolik' });
     } finally {
       setChangingPass(false);
     }
@@ -109,90 +131,93 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
 
   return (
     <div className="max-w-4xl space-y-6">
-      {/* HISOBOT AI Premium Subscription Card */}
-      <div className={`p-6 rounded-2xl border transition-all relative overflow-hidden shadow-xs ${
-        user?.isPremium
-          ? 'bg-gradient-to-br from-amber-500/10 via-yellow-500/10 to-amber-600/15 border-amber-400/50 dark:bg-amber-950/20'
-          : 'bg-gradient-to-br from-blue-600/10 via-indigo-600/10 to-purple-600/15 border-blue-500/30 dark:bg-slate-900'
-      }`}>
+      {/* HISOBOT AI Premium Subscription Card — Dark Emerald/Teal & Amber */}
+      <section
+        className={[
+          'p-5 sm:p-6 rounded-2xl border relative overflow-hidden text-white',
+          user?.isPremium
+            ? 'bg-gradient-to-br from-[#081220] via-[#1C1A10] to-[#2B200B] border-amber-500/35'
+            : 'bg-gradient-to-br from-[#081220] via-[#0A2524] to-[#0D3C36] border-emerald-500/30',
+        ].join(' ')}
+      >
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-md ${
-              user?.isPremium
-                ? 'bg-gradient-to-tr from-amber-400 to-yellow-500 text-amber-950'
-                : 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white'
-            }`}>
-              <Crown className="w-6 h-6 fill-current" />
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div
+              className={[
+                'w-12 h-12 rounded-2xl flex items-center justify-center shrink-0',
+                user?.isPremium
+                  ? 'bg-amber-400 text-slate-950 shadow-[0_8px_22px_rgba(245,158,11,0.30)]'
+                  : 'bg-emerald-500 text-slate-950 shadow-[0_8px_22px_rgba(16,185,129,0.28)]',
+              ].join(' ')}
+            >
+              <Crown className="w-6 h-6" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-                  HISOBOT AI {user?.isPremium ? (user.premiumPlan?.toUpperCase() || 'PRO') : 'Standart (Bepul)'}
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-extrabold text-white">
+                  HISOBOT AI {user?.isPremium ? user.premiumPlan?.toUpperCase() || 'PRO' : 'Standart'}
                 </h2>
-                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                  user?.isPremium
-                    ? 'bg-amber-400 text-amber-950'
-                    : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                }`}>
-                  {user?.isPremium ? 'Faol Obuna' : 'Asosiy Reja'}
-                </span>
+                <Badge tone={user?.isPremium ? 'amber' : 'emerald'}>
+                  {user?.isPremium ? 'Faol obuna' : 'Asosiy reja'}
+                </Badge>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              <p className="text-xs text-slate-300 mt-1">
                 {user?.isPremium
-                  ? `Amal qilish muddati: ${user.premiumExpiresAt ? new Date(user.premiumExpiresAt).toLocaleDateString('uz-UZ') : 'Cheksiz'} gacha`
-                  : 'Barcha AI funksiyalari, chek skaner va cheksiz hamyonlarni ochish uchun Pro ga oʻting'}
+                  ? `Amal qilish muddati: ${
+                      user.premiumExpiresAt
+                        ? new Date(user.premiumExpiresAt).toLocaleDateString('uz-UZ')
+                        : 'Cheksiz'
+                    }`
+                  : 'Barcha AI vositalari, chek skaneri va cheksiz hamyonlarni ochish uchun Pro ga oʻting'}
               </p>
             </div>
           </div>
 
           {onOpenPremiumModal && (
-            <button
+            <Button
+              variant={user?.isPremium ? 'outline' : 'premium'}
+              size="md"
+              leadingIcon={<Sparkles className="w-4 h-4" />}
+              trailingIcon={<ArrowRight className="w-3.5 h-3.5" />}
               onClick={onOpenPremiumModal}
-              className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 shadow-sm ${
-                user?.isPremium
-                  ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white hover:bg-slate-100 border border-slate-200 dark:border-slate-700'
-                  : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-blue-500/25'
-              }`}
+              className={user?.isPremium ? 'bg-white/10 text-white border-white/20 hover:bg-white/20' : ''}
             >
-              <Sparkles className="w-4 h-4 text-amber-300" />
-              <span>{user?.isPremium ? 'Tarifni boshqarish' : 'Premiumga oʻtish'}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+              {user?.isPremium ? 'Tarifni boshqarish' : 'Premiumga oʻtish'}
+            </Button>
           )}
         </div>
 
-        {/* Benefits breakdown */}
-        <div className="mt-4 pt-4 border-t border-slate-200/60 dark:border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-          <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-            <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span>AI Brain & Ovozli kiritish</span>
+        <div className="mt-4 pt-4 border-t border-white/[0.10] grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs text-slate-200">
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>AI Yordamchi & Ovozli kiritish</span>
           </div>
-          <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-            <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span>Fiskal Chek Skaneri (OCR)</span>
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>Chek Skaneri (OCR)</span>
           </div>
-          <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-            <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>Telegram Bot & 3 oylik Prognoz</span>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Profile & Main Preferences Form */}
-      <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
-          <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+      {/* Profile & Preferences Form */}
+      <Card padding="lg">
+        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-white/[0.08]">
+          <User className="w-5 h-5 text-emerald-500" />
+          <h2 className="text-base font-bold text-slate-900 dark:text-white">
             Shaxsiy profil va parametrlar
           </h2>
         </div>
 
         {profileNotice && (
           <div
-            className={`mb-4 p-3 rounded-xl text-xs flex items-center gap-2 ${
+            className={`mb-4 p-3 rounded-xl text-xs flex items-center gap-2 border ${
               profileNotice.type === 'success'
-                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50'
-                : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50'
+                ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/25'
+                : 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/25'
             }`}
           >
             {profileNotice.type === 'success' ? (
@@ -205,226 +230,191 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
         )}
 
         <form onSubmit={handleSaveProfile} className="space-y-4">
-          <div className="flex items-center gap-4 mb-4">
-            <img
-              src={user?.avatarUrl || '/src/assets/images/avatar_user_profile_1794280921902.jpg'}
-              alt={user?.fullName}
-              referrerPolicy="no-referrer"
-              className="w-16 h-16 rounded-2xl object-cover border-2 border-slate-200 dark:border-slate-700 shadow-xs"
-            />
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+          <div className="flex items-center gap-4 mb-2">
+            {!avatarError ? (
+              <img
+                src={user?.avatarUrl || '/src/assets/images/avatar_user_profile_1794280921902.jpg'}
+                alt={user?.fullName || 'Profil'}
+                referrerPolicy="no-referrer"
+                onError={() => setAvatarError(true)}
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-emerald-500/30 shrink-0"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 flex items-center justify-center font-extrabold text-xl shrink-0">
+                {(user?.fullName || 'H').slice(0, 1).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
                 {user?.fullName || 'Foydalanuvchi'}
               </h3>
-              <p className="text-xs text-slate-400 dark:text-slate-500">{user?.email}</p>
-              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold mt-1 inline-block">
-                HISOBOT AI Premium hisobi
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{user?.email}</p>
+              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1 inline-block">
+                HISOBOT AI hisobi
               </span>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                F.I.SH (Ism va familiya)
-              </label>
-              <input
-                type="text"
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+            <Input
+              label="F.I.SH (Ism va familiya)"
+              type="text"
+              required
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+            />
 
-            <div>
-              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Asosiy valyuta
-              </label>
-              <select
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value as any)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="UZS">Oʻzbek soʻmi (UZS)</option>
-                <option value="USD">AQSH dollari (USD)</option>
-                <option value="EUR">Yevro (EUR)</option>
-              </select>
-            </div>
+            <Select
+              label="Asosiy valyuta"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+            >
+              <option value="UZS">Oʻzbek soʻmi (UZS)</option>
+              <option value="USD">AQSH dollari (USD)</option>
+              <option value="EUR">Yevro (EUR)</option>
+            </Select>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Oylik umumiy reja budjeti (soʻmda)
-              </label>
-              <input
-                type="text"
-                value={monthlyBudget}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, '');
-                  setMonthlyBudget(
-                    val ? new Intl.NumberFormat('uz-UZ').format(parseInt(val, 10)).replace(/,/g, ' ') : ''
-                  );
-                }}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+            <Input
+              label="Oylik umumiy reja budjeti (soʻmda)"
+              type="text"
+              inputMode="numeric"
+              monospace
+              trailingAddon="soʻm"
+              value={monthlyBudget}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '');
+                setMonthlyBudget(val ? formatUzNumber(parseInt(val, 10)) : '');
+              }}
+            />
 
-            <div>
-              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Tizim interfeys tili
-              </label>
-              <input
-                type="text"
-                disabled
-                value="Oʻzbek tili (Lotin alifbosi)"
-                className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-500"
-              />
-            </div>
+            <Input
+              label="Tizim interfeys tili"
+              type="text"
+              disabled
+              value="Oʻzbek tili (Lotin alifbosi)"
+            />
           </div>
 
           {/* Theme Mode Switch */}
           <div className="pt-2">
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Interfeys mavzusi (Light / Dark)
-            </label>
-            <div className="flex gap-3">
+            <span className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              Interfeys mavzusi (Yorugʻ / Qorongʻi)
+            </span>
+            <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => {
                   if (theme === 'dark') toggleTheme();
                 }}
-                className={`flex-1 py-2.5 px-4 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition-all ${
+                className={[
+                  'min-h-11 py-2.5 px-4 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition-colors cursor-pointer',
                   theme === 'light'
-                    ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-xs'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-                }`}
+                    ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700'
+                    : 'border-slate-200 dark:border-white/[0.10] text-slate-600 dark:text-slate-400',
+                ].join(' ')}
               >
                 <Sun className="w-4 h-4 text-amber-500" />
-                <span>Yorugʻ rejim (Light)</span>
+                <span>Yorugʻ rejim</span>
               </button>
               <button
                 type="button"
                 onClick={() => {
                   if (theme === 'light') toggleTheme();
                 }}
-                className={`flex-1 py-2.5 px-4 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition-all ${
+                className={[
+                  'min-h-11 py-2.5 px-4 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition-colors cursor-pointer',
                   theme === 'dark'
-                    ? 'border-blue-500 bg-slate-800 text-white shadow-xs'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-                }`}
+                    ? 'border-emerald-500 bg-[#0D1927] text-emerald-300'
+                    : 'border-slate-200 dark:border-white/[0.10] text-slate-600 dark:text-slate-400',
+                ].join(' ')}
               >
-                <Moon className="w-4 h-4 text-blue-400" />
-                <span>Tungi rejim (Dark)</span>
+                <Moon className="w-4 h-4 text-cyan-400" />
+                <span>Qorongʻi rejim</span>
               </button>
             </div>
           </div>
 
           {/* Notification Preferences */}
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-            <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 mb-3 flex items-center gap-1.5">
-              <Bell className="w-4 h-4 text-slate-500" />
+          <div className="pt-3 border-t border-slate-100 dark:border-white/[0.08]">
+            <h3 className="text-xs font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-1.5">
+              <Bell className="w-4 h-4 text-emerald-500" />
               <span>Bildirishnoma sozlamalari</span>
             </h3>
             <div className="space-y-2.5">
-              <label className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl cursor-pointer">
-                <div>
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
-                    Budjet limitlaridan ogohlantirish
-                  </span>
-                  <span className="text-[11px] text-slate-400">
-                    Toifalar xarajati belgilangan chegara (80%) ga yetganda xabar berish
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={budgetAlerts}
-                  onChange={(e) => setBudgetAlerts(e.target.checked)}
-                  className="w-4 h-4 rounded text-blue-600 accent-blue-600"
-                />
-              </label>
-
-              <label className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl cursor-pointer">
-                <div>
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
-                    Qarz toʻlov muddatlari eslatmasi
-                  </span>
-                  <span className="text-[11px] text-slate-400">
-                    Qarz qaytarish vaqti yaqinlashganda eslatma chiqarish
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={debtReminders}
-                  onChange={(e) => setDebtReminders(e.target.checked)}
-                  className="w-4 h-4 rounded text-blue-600 accent-blue-600"
-                />
-              </label>
-
-              <label className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl cursor-pointer">
-                <div>
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
-                    Jamgʻarma maqsadlari yutuqlari
-                  </span>
-                  <span className="text-[11px] text-slate-400">
-                    Maqsadga erishilganda yoki muhim bosqich yakunlanganda xabar berish
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={goalMilestones}
-                  onChange={(e) => setGoalMilestones(e.target.checked)}
-                  className="w-4 h-4 rounded text-blue-600 accent-blue-600"
-                />
-              </label>
-
-              <label className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl cursor-pointer">
-                <div>
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
-                    Haftalik va oylik moliyaviy sarhisob
-                  </span>
-                  <span className="text-[11px] text-slate-400">
-                    Oy yakunida umumiy daromad va xarajat xulosasini taqdim etish
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={weeklySummary}
-                  onChange={(e) => setWeeklySummary(e.target.checked)}
-                  className="w-4 h-4 rounded text-blue-600 accent-blue-600"
-                />
-              </label>
+              {[
+                {
+                  label: 'Budjet limitlaridan ogohlantirish',
+                  desc: 'Toifalar xarajati belgilangan chegara (80%) ga yetganda xabar berish',
+                  checked: budgetAlerts,
+                  onChange: setBudgetAlerts,
+                },
+                {
+                  label: 'Qarz toʻlov muddatlari eslatmasi',
+                  desc: 'Qarz qaytarish vaqti yaqinlashganda eslatma chiqarish',
+                  checked: debtReminders,
+                  onChange: setDebtReminders,
+                },
+                {
+                  label: 'Jamgʻarma maqsadlari yutuqlari',
+                  desc: 'Maqsadga erishilganda yoki muhim bosqich yakunlanganda xabar berish',
+                  checked: goalMilestones,
+                  onChange: setGoalMilestones,
+                },
+                {
+                  label: 'Haftalik va oylik moliyaviy sarhisob',
+                  desc: 'Oy yakunida umumiy daromad va xarajat xulosasini taqdim etish',
+                  checked: weeklySummary,
+                  onChange: setWeeklySummary,
+                },
+              ].map((item, idx) => (
+                <label
+                  key={idx}
+                  className="flex items-center justify-between gap-4 p-3.5 bg-slate-50 dark:bg-[#0D1927] border border-slate-200/60 dark:border-white/[0.06] rounded-xl cursor-pointer"
+                >
+                  <div className="min-w-0">
+                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 block">
+                      {item.label}
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {item.desc}
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={item.checked}
+                    onChange={(e) => item.onChange(e.target.checked)}
+                    className="w-4 h-4 rounded accent-emerald-500 shrink-0 cursor-pointer"
+                  />
+                </label>
+              ))}
             </div>
           </div>
 
           <div className="pt-2 flex justify-end">
-            <button
-              type="submit"
-              disabled={savingProfile}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors disabled:opacity-50"
-            >
+            <Button type="submit" variant="primary" size="md" loading={savingProfile}>
               {savingProfile ? 'Saqlanmoqda...' : 'Profilni saqlash'}
-            </button>
+            </Button>
           </div>
         </form>
-      </div>
+      </Card>
 
       {/* Security & Password Change */}
-      <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
-          <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+      <Card padding="lg">
+        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-white/[0.08]">
+          <Shield className="w-5 h-5 text-emerald-500" />
+          <h2 className="text-base font-bold text-slate-900 dark:text-white">
             Xavfsizlik va parolni oʻzgartirish
           </h2>
         </div>
 
         {passNotice && (
           <div
-            className={`mb-4 p-3 rounded-xl text-xs flex items-center gap-2 ${
+            className={`mb-4 p-3 rounded-xl text-xs flex items-center gap-2 border ${
               passNotice.type === 'success'
-                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50'
-                : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50'
+                ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/25'
+                : 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/25'
             }`}
           >
             {passNotice.type === 'success' ? (
@@ -437,59 +427,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
         )}
 
         <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
-          <div>
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Amaldagi joriy parol
-            </label>
-            <input
-              type="password"
-              required
-              placeholder="••••••••"
-              value={oldPassword}
-              onChange={(e) => setOldPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+          <Input
+            label="Amaldagi joriy parol"
+            type="password"
+            required
+            placeholder="••••••••"
+            value={oldPassword}
+            onChange={(e) => setOldPassword(e.target.value)}
+          />
 
-          <div>
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Yangi parol
-            </label>
-            <input
-              type="password"
-              required
-              placeholder="Kamida 6 belgi"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+          <Input
+            label="Yangi parol"
+            type="password"
+            required
+            placeholder="Kamida 6 belgi"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+          />
 
-          <div>
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Yangi parolni tasdiqlang
-            </label>
-            <input
-              type="password"
-              required
-              placeholder="Yangi parolni qayta kiriting"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+          <Input
+            label="Yangi parolni tasdiqlang"
+            type="password"
+            required
+            placeholder="Yangi parolni qayta kiriting"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+          />
 
-          <div className="pt-2">
-            <button
-              type="submit"
-              disabled={changingPass}
-              className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 rounded-xl text-xs font-bold shadow-xs transition-colors disabled:opacity-50"
-            >
+          <div className="pt-1">
+            <Button type="submit" variant="secondary" size="md" loading={changingPass}>
               {changingPass ? 'Yangilanmoqda...' : 'Parolni yangilash'}
-            </button>
+            </Button>
           </div>
         </form>
-      </div>
+      </Card>
     </div>
   );
 };

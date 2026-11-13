@@ -5,7 +5,8 @@
 
 import React, { useState, useId } from 'react';
 import { formatMoney } from '../../utils/formatters.ts';
-import { BarChart3, TrendingUp, PieChart as PieIcon, ArrowDownLeft, ArrowUpRight, Sparkles } from 'lucide-react';
+import { BarChart3, PieChart as PieIcon, Sparkles } from 'lucide-react';
+import { designTokens } from '../../design-system/tokens.ts';
 
 export interface MonthlyData {
   month: string;
@@ -29,38 +30,38 @@ export interface DailyData {
   expense: number;
 }
 
-// Modern vibrant gradient palette for fintech
+// Locked S+ Emerald Elite Fintech Palette sourced from designTokens
 export const CHART_PALETTE = {
   income: {
-    from: '#10b981', // emerald-500
-    to: '#06b6d4',   // cyan-500
+    from: designTokens.semantic.income,
+    to: designTokens.brand.teal,
     css: 'from-emerald-500 to-cyan-400',
     hoverCss: 'group-hover:from-emerald-400 group-hover:to-cyan-300',
-    glow: 'rgba(6, 182, 212, 0.4)',
+    glow: 'rgba(16, 185, 129, 0.35)',
   },
   expense: {
-    from: '#8b5cf6', // violet-500
-    to: '#f43f5e',   // rose-500
-    css: 'from-violet-600 via-fuchsia-500 to-rose-500',
-    hoverCss: 'group-hover:from-violet-500 group-hover:via-fuchsia-400 group-hover:to-rose-400',
-    glow: 'rgba(244, 63, 94, 0.4)',
+    from: designTokens.semantic.expense,
+    to: '#F87171',
+    css: 'from-rose-600 to-rose-400',
+    hoverCss: 'group-hover:from-rose-500 group-hover:to-rose-300',
+    glow: 'rgba(239, 68, 68, 0.35)',
   },
   savings: {
-    from: '#7c3aed', // violet-600
-    to: '#3b82f6',   // blue-500
-    css: 'from-violet-600 to-blue-500',
-    hoverCss: 'group-hover:from-violet-500 group-hover:to-blue-400',
-    glow: 'rgba(59, 130, 246, 0.4)',
+    from: designTokens.brand.emerald,
+    to: designTokens.semantic.info,
+    css: 'from-emerald-500 to-blue-500',
+    hoverCss: 'group-hover:from-emerald-400 group-hover:to-blue-400',
+    glow: 'rgba(59, 130, 246, 0.35)',
   },
   categories: [
-    '#8b5cf6', // violet
-    '#3b82f6', // blue
-    '#06b6d4', // cyan
-    '#10b981', // emerald
-    '#f59e0b', // amber
-    '#ec4899', // pink
-    '#6366f1', // indigo
-    '#14b8a6', // teal
+    designTokens.brand.emerald,
+    designTokens.brand.teal,
+    designTokens.semantic.info,
+    designTokens.semantic.premium,
+    designTokens.semantic.expense,
+    '#14B8A6',
+    '#0EA5E9',
+    designTokens.brand.mutedText,
   ],
 };
 
@@ -70,13 +71,13 @@ export const CHART_PALETTE = {
 export const IncomeExpenseBarChart: React.FC<{
   data: MonthlyData[];
   height?: number;
-}> = ({ data, height = 260 }) => {
+}> = ({ data, height = 250 }) => {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [chartMode, setChartMode] = useState<'both' | 'net'>('both');
 
   if (!data || data.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-xs text-slate-400">
+      <div className="flex flex-col items-center justify-center h-60 text-xs text-slate-400">
         <BarChart3 className="w-8 h-8 opacity-40 mb-2" />
         <span>Taqqoslash uchun maʼlumot mavjud emas</span>
       </div>
@@ -90,30 +91,30 @@ export const IncomeExpenseBarChart: React.FC<{
 
   return (
     <div className="w-full select-none">
-      {/* Legend & Mode Switcher with Glassmorphic styling */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6 text-xs">
-        <div className="flex items-center gap-4">
+      {/* Legend & Mode Switcher */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5 text-xs">
+        <div className="flex flex-wrap items-center gap-4">
           <span className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
-            <span className="w-3 h-3 rounded-md bg-gradient-to-r from-emerald-500 to-cyan-400 inline-block shadow-xs shadow-cyan-500/30 ring-1 ring-white/30" />
-            <span>Kirim</span>
+            <span className="w-3 h-3 rounded-sm bg-gradient-to-r from-emerald-500 to-cyan-400 inline-block" />
+            <span>Daromad</span>
           </span>
           <span className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
-            <span className="w-3 h-3 rounded-md bg-gradient-to-r from-violet-600 via-fuchsia-500 to-rose-500 inline-block shadow-xs shadow-rose-500/30 ring-1 ring-white/30" />
-            <span>Chiqim</span>
+            <span className="w-3 h-3 rounded-sm bg-gradient-to-r from-rose-600 to-rose-400 inline-block" />
+            <span>Xarajat</span>
           </span>
           <span className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
-            <span className="w-3 h-3 rounded-md bg-gradient-to-r from-violet-600 to-blue-500 inline-block shadow-xs shadow-blue-500/30 ring-1 ring-white/30" />
+            <span className="w-3 h-3 rounded-sm bg-gradient-to-r from-emerald-500 to-blue-500 inline-block" />
             <span>Sof tejash</span>
           </span>
         </div>
 
-        <div className="flex items-center p-1 bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-md rounded-xl text-[11px] font-semibold border border-slate-200/60 dark:border-white/10 shadow-inner">
+        <div className="flex items-center p-1 bg-slate-100 dark:bg-white/[0.06] rounded-xl text-[11px] font-semibold border border-slate-200/70 dark:border-white/[0.08]">
           <button
             type="button"
             onClick={() => setChartMode('both')}
-            className={`px-3 py-1.5 rounded-lg transition-all duration-200 ${
+            className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
               chartMode === 'both'
-                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm ring-1 ring-slate-900/5 dark:ring-white/10'
+                ? 'bg-white dark:bg-[#111B27] text-slate-900 dark:text-white shadow-xs'
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -122,9 +123,9 @@ export const IncomeExpenseBarChart: React.FC<{
           <button
             type="button"
             onClick={() => setChartMode('net')}
-            className={`px-3 py-1.5 rounded-lg transition-all duration-200 ${
+            className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
               chartMode === 'net'
-                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm ring-1 ring-slate-900/5 dark:ring-white/10'
+                ? 'bg-white dark:bg-[#111B27] text-slate-900 dark:text-white shadow-xs'
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -133,16 +134,15 @@ export const IncomeExpenseBarChart: React.FC<{
         </div>
       </div>
 
-      {/* Main Bar Chart Container */}
+      {/* Bar Chart Container */}
       <div
-        className="relative flex items-end justify-between gap-2 sm:gap-4 pt-12 pb-8 border-b border-slate-200/70 dark:border-slate-800/80"
+        className="relative flex items-end justify-between gap-2 sm:gap-4 pt-10 pb-8 border-b border-slate-200/80 dark:border-white/[0.08]"
         style={{ height: `${height}px` }}
       >
-        {/* Subtle Horizontal Gridlines */}
-        <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-25">
-          <div className="border-b border-dashed border-slate-400 dark:border-slate-600 w-full" />
-          <div className="border-b border-dashed border-slate-400 dark:border-slate-600 w-full" />
-          <div className="border-b border-dashed border-slate-400 dark:border-slate-600 w-full" />
+        <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-30">
+          <div className="border-b border-dashed border-slate-300 dark:border-slate-700 w-full" />
+          <div className="border-b border-dashed border-slate-300 dark:border-slate-700 w-full" />
+          <div className="border-b border-dashed border-slate-300 dark:border-slate-700 w-full" />
         </div>
 
         {data.map((item, idx) => {
@@ -155,41 +155,35 @@ export const IncomeExpenseBarChart: React.FC<{
           return (
             <div
               key={idx}
-              className="relative flex-1 flex flex-col items-center h-full justify-end group cursor-pointer"
+              tabIndex={0}
               onMouseEnter={() => setHoveredIndex(idx)}
               onMouseLeave={() => setHoveredIndex(null)}
+              onFocus={() => setHoveredIndex(idx)}
+              onBlur={() => setHoveredIndex(null)}
+              onClick={() => setHoveredIndex(hoveredIndex === idx ? null : idx)}
+              className="relative flex-1 flex flex-col items-center h-full justify-end group cursor-pointer focus-visible:outline-none"
             >
-              {/* Glassmorphic Floating Tooltip */}
+              {/* Floating Tooltip */}
               {isHovered && (
-                <div className="absolute bottom-full mb-3 z-30 backdrop-blur-2xl bg-slate-950/85 dark:bg-slate-900/90 text-white rounded-2xl p-4 shadow-2xl text-xs whitespace-nowrap min-w-[190px] pointer-events-none transition-all duration-200 border border-white/20 ring-1 ring-white/10 animate-in fade-in zoom-in-95">
-                  <div className="font-bold pb-2 mb-2 border-b border-white/10 text-slate-100 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 font-semibold">
-                      <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                <div className="absolute bottom-full mb-2.5 z-30 bg-[#081220]/95 text-white rounded-xl p-3.5 shadow-2xl text-xs whitespace-nowrap min-w-[185px] pointer-events-none border border-white/15 hai-scale-in">
+                  <div className="font-bold pb-1.5 mb-1.5 border-b border-white/10 text-slate-100 flex items-center justify-between gap-3">
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
                       <span>{item.month}</span>
                     </span>
-                    <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase">Hisobot</span>
                   </div>
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center gap-4 text-cyan-300">
-                      <span className="font-medium text-[11px] flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                        Kirim:
-                      </span>
-                      <span className="font-mono font-bold">+{formatMoney(item.income)}</span>
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center gap-4 text-emerald-300">
+                      <span className="text-[11px]">Daromad:</span>
+                      <span className="font-mono font-bold tabular-nums">+{formatMoney(item.income)}</span>
                     </div>
                     <div className="flex justify-between items-center gap-4 text-rose-300">
-                      <span className="font-medium text-[11px] flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-rose-400" />
-                        Chiqim:
-                      </span>
-                      <span className="font-mono font-bold">-{formatMoney(item.expense)}</span>
+                      <span className="text-[11px]">Xarajat:</span>
+                      <span className="font-mono font-bold tabular-nums">-{formatMoney(item.expense)}</span>
                     </div>
-                    <div className="flex justify-between items-center gap-4 text-blue-300 pt-1.5 mt-1 border-t border-white/10 font-bold">
-                      <span className="text-[11px] flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-blue-400" />
-                        Sof tejash:
-                      </span>
-                      <span className="font-mono">
+                    <div className="flex justify-between items-center gap-4 text-cyan-300 pt-1 mt-1 border-t border-white/10 font-bold">
+                      <span className="text-[11px]">Sof tejash:</span>
+                      <span className="font-mono tabular-nums">
                         {item.savings >= 0 ? '+' : ''}
                         {formatMoney(item.savings)}
                       </span>
@@ -198,46 +192,42 @@ export const IncomeExpenseBarChart: React.FC<{
                 </div>
               )}
 
-              {/* Bars Presentation with Vibrant Gradients & Smooth Height Animation */}
               {chartMode === 'both' ? (
-                <div className="w-full flex items-end justify-center gap-1.5 sm:gap-2.5 max-w-[68px]">
-                  {/* Income Bar with Emerald-Cyan Gradient */}
+                <div className="w-full flex items-end justify-center gap-1.5 sm:gap-2 max-w-[64px]">
                   <div
-                    className="w-1/2 rounded-t-xl bg-gradient-to-t from-emerald-500 to-cyan-400 group-hover:from-emerald-400 group-hover:to-cyan-300 transition-all duration-500 ease-out shadow-sm shadow-cyan-500/20 group-hover:shadow-md group-hover:shadow-cyan-500/40"
+                    className="w-1/2 rounded-t-lg bg-gradient-to-t from-emerald-500 to-cyan-400 group-hover:from-emerald-400 group-hover:to-cyan-300 transition-[height,transform] duration-300 ease-out"
                     style={{
                       height: `${incHeight}px`,
-                      transform: isHovered ? 'scaleY(1.02)' : 'scaleY(1)',
+                      transform: isHovered ? 'scaleY(1.03)' : 'scaleY(1)',
                       transformOrigin: 'bottom',
                     }}
                   />
-                  {/* Expense Bar with Violet-Rose Gradient */}
                   <div
-                    className="w-1/2 rounded-t-xl bg-gradient-to-t from-violet-600 via-fuchsia-500 to-rose-500 group-hover:from-violet-500 group-hover:via-fuchsia-400 group-hover:to-rose-400 transition-all duration-500 ease-out shadow-sm shadow-rose-500/20 group-hover:shadow-md group-hover:shadow-rose-500/40"
+                    className="w-1/2 rounded-t-lg bg-gradient-to-t from-rose-600 to-rose-400 group-hover:from-rose-500 group-hover:to-rose-300 transition-[height,transform] duration-300 ease-out"
                     style={{
                       height: `${expHeight}px`,
-                      transform: isHovered ? 'scaleY(1.02)' : 'scaleY(1)',
+                      transform: isHovered ? 'scaleY(1.03)' : 'scaleY(1)',
                       transformOrigin: 'bottom',
                     }}
                   />
                 </div>
               ) : (
-                <div className="w-full flex items-end justify-center max-w-[44px]">
+                <div className="w-full flex items-end justify-center max-w-[40px]">
                   <div
-                    className={`w-full rounded-t-xl transition-all duration-500 ease-out shadow-md ${
+                    className={`w-full rounded-t-lg transition-[height,transform] duration-300 ease-out ${
                       item.savings >= 0
-                        ? 'bg-gradient-to-t from-violet-600 via-indigo-500 to-blue-400 group-hover:from-violet-500 group-hover:to-blue-300 shadow-blue-500/30'
-                        : 'bg-gradient-to-t from-rose-600 to-amber-500 shadow-rose-500/30'
+                        ? 'bg-gradient-to-t from-emerald-500 to-blue-500'
+                        : 'bg-gradient-to-t from-rose-600 to-amber-500'
                     }`}
                     style={{
                       height: `${netHeight}px`,
-                      transform: isHovered ? 'scaleY(1.02)' : 'scaleY(1)',
+                      transform: isHovered ? 'scaleY(1.03)' : 'scaleY(1)',
                       transformOrigin: 'bottom',
                     }}
                   />
                 </div>
               )}
 
-              {/* Month Label */}
               <span className="absolute top-full mt-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate max-w-full group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
                 {item.month.split(' ')[0]}
               </span>
@@ -258,6 +248,7 @@ export const InteractivePieChart: React.FC<{
   title?: string;
 }> = ({ categories, totalAmount }) => {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const filterId = useId();
 
   if (!categories || categories.length === 0) {
     return (
@@ -270,13 +261,11 @@ export const InteractivePieChart: React.FC<{
 
   const computedTotal = totalAmount ?? categories.reduce((sum, c) => sum + c.amount, 0);
 
-  // SVG parameters
-  const size = 210;
-  const strokeWidth = 32;
+  const size = 200;
+  const strokeWidth = 28;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
 
-  // Calculate cumulative offsets
   let cumulativePercentage = 0;
   const slices = categories.slice(0, 7).map((cat, idx) => {
     const pct = cat.percentage / 100;
@@ -284,7 +273,12 @@ export const InteractivePieChart: React.FC<{
     const strokeDashoffset = -cumulativePercentage * circumference;
     cumulativePercentage += pct;
 
-    const assignedColor = cat.color || CHART_PALETTE.categories[idx % CHART_PALETTE.categories.length];
+    const rawColor = cat.color || '';
+    const isForbiddenPurple =
+      /^#(8b5cf6|7c3aed|6366f1|a855f7|9333ea|ec4899)/i.test(rawColor);
+    const assignedColor = isForbiddenPurple
+      ? CHART_PALETTE.categories[idx % CHART_PALETTE.categories.length]
+      : rawColor || CHART_PALETTE.categories[idx % CHART_PALETTE.categories.length];
 
     return {
       ...cat,
@@ -298,8 +292,8 @@ export const InteractivePieChart: React.FC<{
   const activeCategory = hoveredIdx !== null ? slices[hoveredIdx] : null;
 
   return (
-    <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-6">
-      {/* Donut Graphic with glassmorphic center disc */}
+    <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-5">
+      {/* Donut Graphic */}
       <div className="relative flex items-center justify-center shrink-0">
         <svg
           width={size}
@@ -307,25 +301,22 @@ export const InteractivePieChart: React.FC<{
           viewBox={`0 0 ${size} ${size}`}
           className="transform -rotate-90 overflow-visible"
         >
-          {/* Subtle drop shadow filter for active slice glow */}
           <defs>
-            <filter id="pie-glow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor="#8b5cf6" floodOpacity="0.4" />
+            <filter id={`pie-glow-${filterId}`} x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor="#10B981" floodOpacity="0.35" />
             </filter>
           </defs>
 
-          {/* Background circle track */}
           <circle
             cx={size / 2}
             cy={size / 2}
             r={radius}
             fill="transparent"
             stroke="currentColor"
-            className="text-slate-100 dark:text-slate-800/80"
+            className="text-slate-100 dark:text-white/[0.06]"
             strokeWidth={strokeWidth}
           />
 
-          {/* Slices with smooth transitions */}
           {slices.map((slice) => {
             const isHovered = hoveredIdx === slice.idx;
             return (
@@ -336,77 +327,80 @@ export const InteractivePieChart: React.FC<{
                 r={radius}
                 fill="transparent"
                 stroke={slice.color}
-                strokeWidth={isHovered ? strokeWidth + 6 : strokeWidth}
+                strokeWidth={isHovered ? strokeWidth + 5 : strokeWidth}
                 strokeDasharray={slice.strokeDasharray}
                 strokeDashoffset={slice.strokeDashoffset}
                 strokeLinecap="round"
-                filter={isHovered ? 'url(#pie-glow)' : undefined}
-                className="transition-all duration-300 ease-out cursor-pointer"
+                filter={isHovered ? `url(#pie-glow-${filterId})` : undefined}
+                className="transition-all duration-200 ease-out cursor-pointer"
                 onMouseEnter={() => setHoveredIdx(slice.idx)}
                 onMouseLeave={() => setHoveredIdx(null)}
+                onClick={() => setHoveredIdx(hoveredIdx === slice.idx ? null : slice.idx)}
               />
             );
           })}
         </svg>
 
-        {/* Center Readout with Glassmorphic Circle Disc */}
+        {/* Center Readout */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-5">
-          <div className="w-28 h-28 rounded-full backdrop-blur-xl bg-white/80 dark:bg-slate-900/80 border border-white/60 dark:border-white/10 shadow-lg flex flex-col items-center justify-center text-center p-2">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate max-w-[95px]">
-              {activeCategory ? activeCategory.categoryName : 'Jami'}
+          <div className="w-28 h-28 rounded-full bg-white/95 dark:bg-[#0D1927]/95 border border-slate-200/70 dark:border-white/[0.10] shadow-md flex flex-col items-center justify-center text-center p-2">
+            <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate max-w-[92px]">
+              {activeCategory ? activeCategory.categoryName : 'Jami xarajat'}
             </span>
-            <span className="text-xs font-black font-mono text-slate-900 dark:text-white mt-0.5 tracking-tight truncate max-w-[100px]">
+            <span className="text-xs font-extrabold font-mono tabular-nums text-slate-900 dark:text-white mt-0.5 truncate max-w-[100px]">
               {activeCategory ? formatMoney(activeCategory.amount) : formatMoney(computedTotal)}
             </span>
             {activeCategory ? (
-              <span className="text-[10px] font-black text-violet-600 dark:text-violet-400 font-mono mt-0.5">
+              <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 tabular-nums mt-0.5">
                 {activeCategory.percentage}%
               </span>
             ) : (
-              <span className="text-[9px] font-semibold text-slate-400 font-mono mt-0.5">
-                {categories.length} toifa
+              <span className="text-[10px] font-medium text-slate-400 tabular-nums mt-0.5">
+                {categories.length} ta toifa
               </span>
             )}
           </div>
         </div>
       </div>
 
-      {/* Legend items list with Glassmorphic interactive cards */}
+      {/* Legend items list */}
       <div className="flex-1 w-full space-y-2 min-w-0">
         {slices.slice(0, 6).map((cat, idx) => {
           const isHovered = hoveredIdx === idx;
           return (
-            <div
+            <button
+              type="button"
               key={idx}
               onMouseEnter={() => setHoveredIdx(idx)}
               onMouseLeave={() => setHoveredIdx(null)}
-              className={`p-2.5 rounded-xl transition-all duration-200 flex items-center justify-between text-xs cursor-pointer border ${
+              onClick={() => setHoveredIdx(hoveredIdx === idx ? null : idx)}
+              className={`w-full text-left p-2.5 rounded-xl transition-colors flex items-center justify-between gap-2 text-xs cursor-pointer border ${
                 isHovered
-                  ? 'backdrop-blur-md bg-white dark:bg-slate-800 border-violet-500/40 shadow-md scale-[1.02]'
-                  : 'backdrop-blur-xs bg-slate-50/60 dark:bg-slate-800/40 border-slate-200/50 dark:border-white/5 hover:bg-white/80 dark:hover:bg-slate-800/80'
+                  ? 'bg-emerald-500/[0.06] dark:bg-white/[0.06] border-emerald-500/40'
+                  : 'bg-slate-50/70 dark:bg-white/[0.03] border-slate-200/60 dark:border-white/[0.06] hover:bg-slate-100/70 dark:hover:bg-white/[0.05]'
               }`}
             >
-              <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
                 <span
-                  className="w-3 h-3 rounded-md shrink-0 shadow-xs ring-1 ring-white/20"
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
                   style={{ backgroundColor: cat.color }}
                 />
                 <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
                   {cat.categoryName}
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono">
+                <span className="text-[11px] text-slate-400 tabular-nums shrink-0">
                   ({cat.count})
                 </span>
               </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="font-mono font-bold text-slate-900 dark:text-white">
+              <div className="flex items-center gap-2.5 shrink-0">
+                <span className="font-mono font-bold tabular-nums text-slate-900 dark:text-white">
                   {formatMoney(cat.amount)}
                 </span>
-                <span className="font-mono text-[11px] font-semibold text-violet-600 dark:text-violet-400 min-w-[34px] text-right">
+                <span className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400 min-w-[32px] text-right tabular-nums">
                   {cat.percentage}%
                 </span>
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -420,7 +414,7 @@ export const InteractivePieChart: React.FC<{
 export const DailyTrendLineChart: React.FC<{
   data: DailyData[];
   height?: number;
-}> = ({ data, height = 230 }) => {
+}> = ({ data, height = 240 }) => {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const chartId = useId();
 
@@ -443,7 +437,6 @@ export const DailyTrendLineChart: React.FC<{
     return { x, y };
   };
 
-  // Build smooth cubic bezier curve
   const buildSmoothPath = (values: number[]) => {
     if (values.length === 0) return '';
     const points = values.map((v, i) => getCoordinates(v, i));
@@ -468,7 +461,6 @@ export const DailyTrendLineChart: React.FC<{
   const incomeLine = buildSmoothPath(data.map((d) => d.income));
   const expenseLine = buildSmoothPath(data.map((d) => d.expense));
 
-  // Area paths (closed to bottom)
   const firstPt = getCoordinates(0, 0);
   const lastPt = getCoordinates(0, data.length - 1);
   const incomeArea = `${incomeLine} L ${lastPt.x},${height - paddingY} L ${firstPt.x},${height - paddingY} Z`;
@@ -478,67 +470,51 @@ export const DailyTrendLineChart: React.FC<{
 
   return (
     <div className="w-full select-none">
-      {/* Legend & Glassmorphic Hover Data Callout */}
-      <div className="flex items-center justify-between mb-4 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-xs">
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1.5 font-medium text-emerald-600 dark:text-emerald-400">
-            <span className="w-3.5 h-1.5 bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full inline-block shadow-xs shadow-cyan-500/40" />
+            <span className="w-3.5 h-1.5 bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full inline-block" />
             <span>Kirim dinamikasi</span>
           </span>
-          <span className="flex items-center gap-1.5 font-medium text-violet-600 dark:text-violet-400">
-            <span className="w-3.5 h-1.5 bg-gradient-to-r from-violet-500 to-rose-500 rounded-full inline-block shadow-xs shadow-rose-500/40" />
+          <span className="flex items-center gap-1.5 font-medium text-rose-600 dark:text-rose-400">
+            <span className="w-3.5 h-1.5 bg-gradient-to-r from-rose-500 to-rose-400 rounded-full inline-block" />
             <span>Chiqim dinamikasi</span>
           </span>
         </div>
 
         {hoveredPoint ? (
-          <div className="flex items-center gap-2.5 font-mono text-xs px-3 py-1.5 rounded-xl backdrop-blur-md bg-slate-900/90 text-white dark:bg-white dark:text-slate-900 border border-white/20 dark:border-slate-300 shadow-md animate-in fade-in duration-150">
-            <span className="text-slate-300 dark:text-slate-600 font-sans font-medium text-[11px]">{hoveredPoint.date}:</span>
-            <span className="text-cyan-400 dark:text-emerald-600 font-bold">
-              +{formatMoney(hoveredPoint.income)}
-            </span>
-            <span className="text-rose-400 dark:text-rose-600 font-bold">
-              -{formatMoney(hoveredPoint.expense)}
-            </span>
+          <div className="flex items-center gap-2.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-[#081220] text-white border border-white/15 shadow-md tabular-nums">
+            <span className="text-slate-300 font-sans font-medium text-[11px]">{hoveredPoint.date}:</span>
+            <span className="text-emerald-400 font-bold">+{formatMoney(hoveredPoint.income)}</span>
+            <span className="text-rose-400 font-bold">-{formatMoney(hoveredPoint.expense)}</span>
           </div>
         ) : (
-          <span className="text-[11px] text-slate-400">Grafig boʻylab sichqonchani olib boring</span>
+          <span className="text-[11px] text-slate-400">Nuqtalar ustiga olib boring</span>
         )}
       </div>
 
       <div className="relative w-full overflow-hidden">
-        <svg
-          viewBox={`0 0 ${width} ${height}`}
-          className="w-full h-auto overflow-visible"
-        >
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto overflow-visible">
           <defs>
-            {/* Luminous Stroke Gradients */}
             <linearGradient id={`lineGradInc-${chartId}`} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#10b981" />
-              <stop offset="100%" stopColor="#06b6d4" />
+              <stop offset="0%" stopColor="#10B981" />
+              <stop offset="100%" stopColor="#06B6D4" />
             </linearGradient>
             <linearGradient id={`lineGradExp-${chartId}`} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#8b5cf6" />
-              <stop offset="100%" stopColor="#f43f5e" />
+              <stop offset="0%" stopColor="#EF4444" />
+              <stop offset="100%" stopColor="#F87171" />
             </linearGradient>
 
-            {/* Area Fill Gradients */}
             <linearGradient id={`gradInc-${chartId}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+              <stop offset="0%" stopColor="#10B981" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
             </linearGradient>
             <linearGradient id={`gradExp-${chartId}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.25" />
-              <stop offset="100%" stopColor="#f43f5e" stopOpacity="0.0" />
+              <stop offset="0%" stopColor="#EF4444" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="#EF4444" stopOpacity="0.0" />
             </linearGradient>
-
-            {/* Neon Glow Filter */}
-            <filter id={`glow-${chartId}`} x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#8b5cf6" floodOpacity="0.3" />
-            </filter>
           </defs>
 
-          {/* Grid lines */}
           <line
             x1={paddingX}
             y1={height - paddingY}
@@ -554,34 +530,29 @@ export const DailyTrendLineChart: React.FC<{
             x2={width - paddingX}
             y2={paddingY}
             stroke="currentColor"
-            className="text-slate-200 dark:text-slate-800 opacity-40"
+            className="text-slate-200 dark:text-slate-800 opacity-50"
             strokeDasharray="4 4"
             strokeWidth="1"
           />
 
-          {/* Smooth Fills */}
-          <path d={incomeArea} fill={`url(#gradInc-${chartId})`} className="transition-all duration-500 ease-out" />
-          <path d={expenseArea} fill={`url(#gradExp-${chartId})`} className="transition-all duration-500 ease-out" />
+          <path d={incomeArea} fill={`url(#gradInc-${chartId})`} />
+          <path d={expenseArea} fill={`url(#gradExp-${chartId})`} />
 
-          {/* Smooth Vibrant Gradient Lines */}
           <path
             d={incomeLine}
             fill="none"
             stroke={`url(#lineGradInc-${chartId})`}
-            strokeWidth="3.5"
+            strokeWidth="3"
             strokeLinecap="round"
-            className="transition-all duration-500 ease-out"
           />
           <path
             d={expenseLine}
             fill="none"
             stroke={`url(#lineGradExp-${chartId})`}
-            strokeWidth="3.5"
+            strokeWidth="3"
             strokeLinecap="round"
-            className="transition-all duration-500 ease-out"
           />
 
-          {/* Interactive Cursor Ruler */}
           {hoveredIdx !== null && (
             <line
               x1={getCoordinates(0, hoveredIdx).x}
@@ -589,13 +560,12 @@ export const DailyTrendLineChart: React.FC<{
               x2={getCoordinates(0, hoveredIdx).x}
               y2={height - paddingY}
               stroke="currentColor"
-              className="text-violet-500 opacity-80"
+              className="text-emerald-500 opacity-75"
               strokeDasharray="3 3"
               strokeWidth="1.5"
             />
           )}
 
-          {/* Interactive Data Points with Pulsing Glow on Hover */}
           {data.map((d, i) => {
             const incPt = getCoordinates(d.income, i);
             const expPt = getCoordinates(d.expense, i);
@@ -603,9 +573,8 @@ export const DailyTrendLineChart: React.FC<{
 
             return (
               <g key={i}>
-                {/* Touch/mouse catch target */}
                 <rect
-                  x={incPt.x - (width / data.length) / 2}
+                  x={incPt.x - width / data.length / 2}
                   y={0}
                   width={width / data.length}
                   height={height}
@@ -613,28 +582,29 @@ export const DailyTrendLineChart: React.FC<{
                   className="cursor-pointer"
                   onMouseEnter={() => setHoveredIdx(i)}
                   onMouseLeave={() => setHoveredIdx(null)}
+                  onClick={() => setHoveredIdx(i)}
                 />
 
                 {d.income > 0 && (
                   <circle
                     cx={incPt.x}
                     cy={incPt.y}
-                    r={isHovered ? 7 : 4}
-                    fill="#06b6d4"
+                    r={isHovered ? 6 : 3.5}
+                    fill="#10B981"
                     stroke="#ffffff"
-                    strokeWidth={isHovered ? 3 : 1.5}
-                    className="transition-all duration-200 pointer-events-none shadow-md"
+                    strokeWidth={isHovered ? 2.5 : 1.5}
+                    className="transition-all duration-150 pointer-events-none"
                   />
                 )}
                 {d.expense > 0 && (
                   <circle
                     cx={expPt.x}
                     cy={expPt.y}
-                    r={isHovered ? 7 : 4}
-                    fill="#f43f5e"
+                    r={isHovered ? 6 : 3.5}
+                    fill="#EF4444"
                     stroke="#ffffff"
-                    strokeWidth={isHovered ? 3 : 1.5}
-                    className="transition-all duration-200 pointer-events-none shadow-md"
+                    strokeWidth={isHovered ? 2.5 : 1.5}
+                    className="transition-all duration-150 pointer-events-none"
                   />
                 )}
               </g>
@@ -654,21 +624,20 @@ export const BudgetGaugeChart: React.FC<{
   limit: number;
   percentage: number;
 }> = ({ spent, limit, percentage }) => {
-  const size = 160;
+  const size = 152;
   const strokeWidth = 14;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
 
-  // We show an arc of 240 degrees (leaving 120 deg gap at bottom)
   const maxAngle = 0.75;
   const arcLength = circumference * maxAngle;
   const fillRatio = Math.min(1, Math.max(0, percentage / 100));
   const strokeDashoffset = arcLength * (1 - fillRatio);
 
   const getColor = () => {
-    if (percentage > 100) return '#f43f5e'; // Rose-500
-    if (percentage >= 80) return '#f59e0b';  // Amber-500
-    return '#10b981';                      // Emerald-500
+    if (percentage > 100) return '#EF4444';
+    if (percentage >= 80) return '#F59E0B';
+    return '#10B981';
   };
 
   return (
@@ -680,20 +649,17 @@ export const BudgetGaugeChart: React.FC<{
           viewBox={`0 0 ${size} ${size}`}
           className="transform -rotate-135"
         >
-          {/* Background Arc */}
           <circle
             cx={size / 2}
             cy={size / 2}
             r={radius}
             fill="transparent"
             stroke="currentColor"
-            className="text-slate-100 dark:text-slate-800"
+            className="text-slate-100 dark:text-white/[0.08]"
             strokeWidth={strokeWidth}
             strokeDasharray={`${arcLength} ${circumference}`}
             strokeLinecap="round"
           />
-
-          {/* Active Progress Arc */}
           <circle
             cx={size / 2}
             cy={size / 2}
@@ -704,22 +670,21 @@ export const BudgetGaugeChart: React.FC<{
             strokeDasharray={`${arcLength} ${circumference}`}
             strokeDashoffset={strokeDashoffset}
             strokeLinecap="round"
-            className="transition-all duration-700 ease-out"
+            className="transition-all duration-500 ease-out"
           />
         </svg>
 
-        {/* Center Readout */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-black font-mono tracking-tight text-slate-900 dark:text-white">
+          <span className="text-2xl font-extrabold font-mono tabular-nums tracking-tight text-slate-900 dark:text-white">
             {percentage}%
           </span>
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            Sarflandi
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+            Bajarilgan
           </span>
         </div>
       </div>
 
-      <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 font-mono">
+      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
         <span className="font-bold text-slate-900 dark:text-slate-100">{formatMoney(spent)}</span>
         {' / '}
         <span>{formatMoney(limit)}</span>
@@ -737,41 +702,50 @@ export const CategoryProgressList: React.FC<{
 }> = ({ categories }) => {
   if (!categories || categories.length === 0) {
     return (
-      <div className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+      <div className="py-8 text-center text-xs text-slate-400 dark:text-slate-500">
         Bu muddatda xarajatlar mavjud emas
       </div>
     );
   }
 
   return (
-    <div className="space-y-3.5">
+    <div className="space-y-3">
       {categories.slice(0, 6).map((cat, i) => {
-        const catColor = cat.color || CHART_PALETTE.categories[i % CHART_PALETTE.categories.length];
+        const rawColor = cat.color || '';
+        const isForbiddenPurple =
+          /^#(8b5cf6|7c3aed|6366f1|a855f7|9333ea|ec4899)/i.test(rawColor);
+        const catColor = isForbiddenPurple
+          ? CHART_PALETTE.categories[i % CHART_PALETTE.categories.length]
+          : rawColor || CHART_PALETTE.categories[i % CHART_PALETTE.categories.length];
+
         return (
-          <div key={i} className="group p-2.5 rounded-xl backdrop-blur-xs bg-slate-50/60 dark:bg-slate-800/40 border border-slate-200/50 dark:border-white/5 hover:bg-white/80 dark:hover:bg-slate-800/80 transition-all duration-200">
-            <div className="flex items-center justify-between text-xs mb-1.5">
-              <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+          <div
+            key={i}
+            className="p-2.5 rounded-xl bg-slate-50/70 dark:bg-white/[0.03] border border-slate-200/60 dark:border-white/[0.06]"
+          >
+            <div className="flex items-center justify-between gap-2 text-xs mb-1.5">
+              <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2 min-w-0">
                 <span
-                  className="w-2.5 h-2.5 rounded-full inline-block shrink-0 shadow-xs ring-1 ring-white/20"
+                  className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
                   style={{ backgroundColor: catColor }}
                 />
-                <span className="truncate max-w-[150px] sm:max-w-[200px]">{cat.categoryName}</span>
-                <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">
+                <span className="truncate">{cat.categoryName}</span>
+                <span className="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums shrink-0">
                   ({cat.count} ta)
                 </span>
               </span>
-              <div className="flex items-center gap-2">
-                <span className="font-mono font-bold text-slate-900 dark:text-slate-100">
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="font-mono font-bold tabular-nums text-slate-900 dark:text-slate-100">
                   {formatMoney(cat.amount)}
                 </span>
-                <span className="font-mono text-xs text-violet-600 dark:text-violet-400 min-w-[32px] text-right font-semibold">
+                <span className="font-mono text-xs text-emerald-600 dark:text-emerald-400 min-w-[32px] text-right font-semibold tabular-nums">
                   {cat.percentage}%
                 </span>
               </div>
             </div>
-            <div className="w-full bg-slate-200/60 dark:bg-slate-700/60 rounded-full h-2 overflow-hidden">
+            <div className="w-full bg-slate-200/70 dark:bg-white/[0.08] rounded-full h-2 overflow-hidden">
               <div
-                className="h-full rounded-full transition-all duration-500 shadow-xs"
+                className="h-full rounded-full transition-[width] duration-500"
                 style={{
                   width: `${Math.min(100, Math.max(3, cat.percentage))}%`,
                   backgroundColor: catColor,

@@ -7,19 +7,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Mic,
   MicOff,
-  X,
   Sparkles,
   Check,
-  RotateCcw,
   AlertCircle,
   Globe,
   ArrowDownLeft,
   ArrowUpRight,
-  Volume2,
 } from 'lucide-react';
 import { AIParsedTransaction, Category, Transaction } from '../../types/finance.ts';
 import { formatMoney, formatDateUz, PAYMENT_METHODS_MAP } from '../../utils/formatters.ts';
 import { api } from '../../services/api.ts';
+import { Modal, Button } from '../../design-system/index.ts';
 
 interface VoiceTransactionModalProps {
   isOpen: boolean;
@@ -32,7 +30,6 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
   isOpen,
   onClose,
   onTransactionSaved,
-  categories = [],
 }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -41,18 +38,8 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
   const [parsedTx, setParsedTx] = useState<AIParsedTransaction | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [speechSupported, setSpeechSupported] = useState(true);
 
   const recognitionRef = useRef<any>(null);
-
-  useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setSpeechSupported(false);
-    }
-  }, []);
 
   useEffect(() => {
     if (!isOpen) {
@@ -71,8 +58,9 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setSpeechSupported(false);
-      setError('Brauzeringizda ovozni aniqlash (SpeechRecognition) qoʻllab-quvvatlanmaydi. Matnni qoʻlda yozishingiz yoki tezkor namunalardan foydalanishingiz mumkin.');
+      setError(
+        'Brauzeringizda ovozni aniqlash qoʻllab-quvvatlanmaydi. Matnni qoʻlda yozishingiz yoki tezkor namunalardan foydalanishingiz mumkin.'
+      );
       return;
     }
 
@@ -82,10 +70,7 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
       recognition.continuous = false;
       recognition.interimResults = true;
 
-      recognition.onstart = () => {
-        setIsRecording(true);
-      };
-
+      recognition.onstart = () => setIsRecording(true);
       recognition.onresult = (event: any) => {
         let current = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -93,20 +78,15 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
         }
         setTranscript(current);
       };
-
       recognition.onerror = (event: any) => {
-        console.warn('Speech recognition error:', event.error);
         if (event.error === 'not-allowed') {
-          setError('Mikrofon ruxsati berilmadi. Iltimos, brauzerda mikrofonga ruxsat bering.');
+          setError('Mikrofon ruxsati berilmadi. Brauzer sozlamalaridan mikrofonga ruxsat bering.');
         } else {
-          setError(`Ovozni yozishda xatolik yuz berdi (${event.error})`);
+          setError(`Ovozni yozishda xatolik (${event.error})`);
         }
         setIsRecording(false);
       };
-
-      recognition.onend = () => {
-        setIsRecording(false);
-      };
+      recognition.onend = () => setIsRecording(false);
 
       recognition.start();
       recognitionRef.current = recognition;
@@ -143,7 +123,7 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
       const res = await api.parseAITransaction(text, langCode);
       setParsedTx(res.parsed);
     } catch (err: any) {
-      setError(err.message || 'AI tahlilida xatolik yuz berdi');
+      setError(err.message || 'Tahlil qilishda xatolik yuz berdi');
     } finally {
       setParsing(false);
     }
@@ -163,7 +143,7 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         description: parsedTx.description,
         paymentMethod: parsedTx.paymentMethod || 'card',
-        notes: `Ovozli buyruq orqali kiritildi («${transcript}»)`,
+        notes: `Ovozli kiritish («${transcript}»)`,
       });
 
       onTransactionSaved(res.transaction);
@@ -181,208 +161,176 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
     'Kecha 100 ming soʻm transportga ketdi.',
   ];
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center">
-              <Mic className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                Ovozli tranzaksiya kiritish
-              </h3>
-              <p className="text-[11px] text-slate-400">
-                Moliyaviy xabaringizni gapiring — AI uni tahlil qilib tasdiqlash uchun tayyorlaydi
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size="lg"
+      title="Ovozli tranzaksiya kiritish"
+      subtitle="Xabaringizni gapiring yoki yozing — tizim uni tahlil qilib tayyorlaydi"
+    >
+      <div className="space-y-4">
         {/* Language selector */}
-        <div className="mt-4 flex items-center justify-between text-xs">
-          <span className="text-slate-500 flex items-center gap-1.5">
-            <Globe className="w-3.5 h-3.5" />
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 font-medium">
+            <Globe className="w-3.5 h-3.5 text-cyan-500" />
             <span>Ovoz tili:</span>
           </span>
-          <div className="flex p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg">
-            <button
-              onClick={() => setLanguage('uz-UZ')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
-                language === 'uz-UZ'
-                  ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-xs'
-                  : 'text-slate-500'
-              }`}
-            >
-              Oʻzbekcha
-            </button>
-            <button
-              onClick={() => setLanguage('ru-RU')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
-                language === 'ru-RU'
-                  ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-xs'
-                  : 'text-slate-500'
-              }`}
-            >
-              Русский
-            </button>
-            <button
-              onClick={() => setLanguage('en-US')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
-                language === 'en-US'
-                  ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-xs'
-                  : 'text-slate-500'
-              }`}
-            >
-              English
-            </button>
+          <div className="flex p-1 bg-slate-100 dark:bg-[#0D1927] rounded-xl border border-slate-200/70 dark:border-white/[0.08]">
+            {[
+              { id: 'uz-UZ' as const, label: 'Oʻzbekcha' },
+              { id: 'ru-RU' as const, label: 'Русский' },
+              { id: 'en-US' as const, label: 'English' },
+            ].map((lang) => (
+              <button
+                key={lang.id}
+                type="button"
+                onClick={() => setLanguage(lang.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  language === lang.id
+                    ? 'bg-white dark:bg-[#111B27] text-cyan-600 dark:text-cyan-400 shadow-xs'
+                    : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                {lang.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Error notification */}
         {error && (
-          <div className="mt-3 p-3 text-xs bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 rounded-xl flex items-center gap-2 border border-rose-200 dark:border-rose-900/40">
+          <div className="p-3 text-xs bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-300 rounded-xl flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* Microphone Central Action */}
-        <div className="my-6 flex flex-col items-center justify-center">
+        {/* Microphone Action */}
+        <div className="py-4 flex flex-col items-center justify-center">
           <button
+            type="button"
+            aria-label={isRecording ? 'Ovoz yozishni toʻxtatish' : 'Ovoz yozishni boshlash'}
             onClick={isRecording ? stopRecording : startRecording}
-            className={`w-20 h-20 rounded-full flex items-center justify-center transition-all shadow-lg ${
+            className={`w-20 h-20 rounded-full flex items-center justify-center transition-all cursor-pointer ${
               isRecording
-                ? 'bg-rose-600 text-white animate-pulse ring-8 ring-rose-200 dark:ring-rose-900/40'
-                : 'bg-blue-600 hover:bg-blue-700 text-white hover:scale-105'
+                ? 'bg-rose-600 text-white ring-8 ring-rose-500/25 shadow-[0_0_28px_rgba(239,68,68,0.45)]'
+                : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-[0_10px_28px_rgba(6,182,212,0.32)] hover:scale-105'
             }`}
           >
             {isRecording ? <MicOff className="w-8 h-8" /> : <Mic className="w-8 h-8" />}
           </button>
           <span className="text-xs font-semibold mt-3 text-slate-700 dark:text-slate-300">
-            {isRecording ? 'Tinglanmoqda... Gapiring' : 'Gapirish uchun tugmani bosing'}
+            {isRecording ? 'Tinglanmoqda... Gapiring' : 'Gapirish uchun mikrofonni bosing'}
           </span>
         </div>
 
-        {/* Transcript Box with Manual Edit */}
+        {/* Transcript Box */}
         <div>
-          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
             Aniqlangan matn (qoʻlda oʻzgartirish mumkin):
           </label>
           <textarea
             rows={2}
             value={transcript}
             onChange={(e) => setTranscript(e.target.value)}
-            placeholder="Ovozli xabaringiz matni bu yerda paydo boʻladi..."
-            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Masalan: Bugun 150 ming soʻm tushlikka sarfladim..."
+            className="w-full px-3.5 py-2.5 bg-[#F8FAFC] dark:bg-[#0D1927] border border-slate-200 dark:border-white/[0.12] rounded-xl text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500"
           />
         </div>
 
         {/* Sample phrases */}
-        <div className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-1">
-          <span className="text-[10px] text-slate-400 shrink-0 font-medium">Namunalar:</span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-slate-400 font-medium">Namunalar:</span>
           {samplePhrases.map((phrase, i) => (
             <button
               key={i}
+              type="button"
               onClick={() => {
                 setTranscript(phrase);
                 handleParse(phrase);
               }}
-              className="text-[10px] px-2 py-0.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 rounded-md shrink-0 transition-colors"
+              className="text-[11px] px-2.5 py-1 bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.12] text-slate-700 dark:text-slate-300 rounded-lg transition-colors cursor-pointer"
             >
               {phrase}
             </button>
           ))}
         </div>
 
-        {/* Parse Button if not parsed */}
-        {!parsedTx && transcript && (
-          <div className="mt-4 flex justify-end">
-            <button
+        {!parsedTx && transcript.trim() && (
+          <div className="flex justify-end">
+            <Button
               onClick={() => handleParse()}
-              disabled={parsing}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              loading={parsing}
+              leadingIcon={<Sparkles className="w-4 h-4" />}
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>{parsing ? 'AI tahlil qilmoqda...' : 'Tranzaksiyani aniqlash'}</span>
-            </button>
+              Tranzaksiyani aniqlash
+            </Button>
           </div>
         )}
 
-        {/* Confirmation Card (Requirement: Parsed before saving, user confirmation required) */}
+        {/* Confirmation Card */}
         {parsedTx && (
-          <div className="mt-4 p-4 bg-blue-50/60 dark:bg-blue-950/30 rounded-2xl border border-blue-200 dark:border-blue-900/40 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-blue-200/50 dark:border-blue-900/50 text-xs">
-              <span className="font-bold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
+          <div className="p-4 bg-cyan-500/[0.08] dark:bg-cyan-500/[0.08] rounded-2xl border border-cyan-500/25 space-y-3">
+            <div className="flex items-center justify-between pb-2.5 border-b border-cyan-500/20 text-xs">
+              <span className="font-bold flex items-center gap-1.5 text-slate-900 dark:text-white">
                 {parsedTx.type === 'income' ? (
-                  <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
+                  <ArrowDownLeft className="w-4 h-4 text-emerald-500" />
                 ) : (
-                  <ArrowUpRight className="w-4 h-4 text-rose-600" />
+                  <ArrowUpRight className="w-4 h-4 text-rose-500" />
                 )}
                 <span>{parsedTx.type === 'income' ? 'Kirim' : 'Chiqim'} tranzaksiyasi</span>
               </span>
-              <span className="font-mono font-bold text-sm text-slate-900 dark:text-slate-100">
+              <span className="font-mono font-extrabold text-sm tabular-nums text-slate-900 dark:text-white">
                 {parsedTx.type === 'income' ? '+' : '-'}
                 {formatMoney(parsedTx.amount)}
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
+            <div className="grid grid-cols-2 gap-2.5 text-xs">
               <div>
-                <span className="text-slate-400 block">Toifa:</span>
-                <span className="font-medium text-slate-800 dark:text-slate-200">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Toifa</span>
+                <span className="font-semibold text-slate-900 dark:text-white">
                   {parsedTx.categoryName}
                 </span>
               </div>
               <div>
-                <span className="text-slate-400 block">Sana:</span>
-                <span className="font-medium text-slate-800 dark:text-slate-200">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Sana</span>
+                <span className="font-semibold text-slate-900 dark:text-white tabular-nums">
                   {formatDateUz(parsedTx.date)}
                 </span>
               </div>
               <div>
-                <span className="text-slate-400 block">Tavsif:</span>
-                <span className="font-medium text-slate-800 dark:text-slate-200">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Tavsif</span>
+                <span className="font-semibold text-slate-900 dark:text-white">
                   {parsedTx.description}
                 </span>
               </div>
               <div>
-                <span className="text-slate-400 block">Toʻlov usuli:</span>
-                <span className="font-medium text-slate-800 dark:text-slate-200">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                  Toʻlov usuli
+                </span>
+                <span className="font-semibold text-slate-900 dark:text-white">
                   {PAYMENT_METHODS_MAP[parsedTx.paymentMethod]?.label || parsedTx.paymentMethod}
                 </span>
               </div>
             </div>
 
             <div className="pt-2 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setParsedTx(null)}
-                className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400"
-              >
+              <Button variant="ghost" size="sm" onClick={() => setParsedTx(null)}>
                 Qaytadan
-              </button>
-              <button
+              </Button>
+              <Button
+                size="sm"
+                loading={saving}
                 onClick={handleConfirmAndSave}
-                disabled={saving}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                leadingIcon={<Check className="w-4 h-4" />}
               >
-                <Check className="w-3.5 h-3.5" />
-                <span>{saving ? 'Saqlanmoqda...' : 'Tasdiqlash va saqlash'}</span>
-              </button>
+                Tasdiqlash va saqlash
+              </Button>
             </div>
           </div>
         )}
       </div>
-    </div>
+    </Modal>
   );
 };

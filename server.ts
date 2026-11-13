@@ -5,6 +5,7 @@
 
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
+import http from 'http';
 import path from 'path';
 import dotenv from 'dotenv';
 import { db } from './src/server/db.ts';
@@ -15,7 +16,7 @@ import {
   calculateFinancialHealth,
   calculateFinancialForecast,
 } from './src/server/ai.ts';
-import type { UserProfile, Transaction, FinancialSummary } from './src/types/finance.ts';
+import type { UserProfile, FinancialSummary } from './src/types/finance.ts';
 
 dotenv.config();
 
@@ -1003,7 +1004,7 @@ app.post('/api/telegram/disconnect', authMiddleware, (req: AuthenticatedRequest,
   res.json({ connection });
 });
 
-app.post('/api/telegram/test-send', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/telegram/test-send', authMiddleware, (_req: AuthenticatedRequest, res: Response) => {
   res.json({
     success: true,
     message: 'Telegram bot orqali sinov xabari yuborildi: «HISOBOT AI: Sizning kunlik balansingiz va xarajatlaringiz yangilandi»',
@@ -1012,7 +1013,10 @@ app.post('/api/telegram/test-send', authMiddleware, (req: AuthenticatedRequest, 
 
 // Vite Middleware for Full-stack Dev or Static Files in Production
 async function setupVite() {
+  let viteInstance: { close: () => Promise<void> } | null = null;
+
   if (process.env.NODE_ENV === 'production') {
+    app.use('/src/assets', express.static(path.resolve(process.cwd(), 'src/assets')));
     app.use(express.static(path.resolve(process.cwd(), 'dist')));
     app.get('*', (_req, res) => {
       res.sendFile(path.resolve(process.cwd(), 'dist', 'index.html'));
@@ -1020,15 +1024,62 @@ async function setupVite() {
   } else {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        allowedHosts: true,
+        hmr: false,
+        ws: false,
+      },
       appType: 'spa',
     });
+    viteInstance = vite;
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`HISOBOT AI server running on http://0.0.0.0:${PORT}`);
+  const server = http.createServer(app);
+  let listenAttempts = 0;
+  const maxListenAttempts = 3;
+
+  const startListening = () => {
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`HISOBOT AI server running on http://0.0.0.0:${PORT}`);
+    });
+  };
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE' && listenAttempts < maxListenAttempts) {
+      listenAttempts += 1;
+      console.warn(`Port ${PORT} is busy, retrying (${listenAttempts}/${maxListenAttempts})...`);
+      setTimeout(startListening, 500);
+      return;
+    }
+
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`Port ${PORT} is already in use by another active instance.`);
+      process.exit(0);
+    }
+
+    console.error('Server error:', err);
+    process.exit(1);
   });
+
+  const shutdown = async () => {
+    server.close(async () => {
+      if (viteInstance) {
+        try {
+          await viteInstance.close();
+        } catch {
+          // ignore close errors during shutdown
+        }
+      }
+      process.exit(0);
+    });
+  };
+
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
+
+  startListening();
 }
 
 setupVite();
