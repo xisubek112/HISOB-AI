@@ -16,14 +16,23 @@ import {
   calculateFinancialHealth,
   calculateFinancialForecast,
 } from './src/server/ai.ts';
-import type { UserProfile, FinancialSummary } from './src/types/finance.ts';
+import {
+  GEMINI_MODEL,
+  checkUserRateLimit,
+  isGeminiConfigured,
+  parseReceiptWithGemini,
+  parseTransactionWithGemini,
+  runGeminiAssistantTurn,
+  type GeminiHistoryItem,
+} from './src/server/gemini.ts';
+import type { UserProfile, FinancialSummary, AIProposedAction } from './src/types/finance.ts';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.NODE_ENV === 'production' && process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '6mb' }));
 
 // Auth Middleware: extracts user from Bearer Token or demo fallback
 interface AuthenticatedRequest extends Request {
@@ -520,14 +529,166 @@ app.get('/api/reports/summary', authMiddleware, (req: AuthenticatedRequest, res:
 });
 
 // --- AI ASSISTANT ROUTES ---
+app.get('/api/ai/status', authMiddleware, (_req: AuthenticatedRequest, res: Response) => {
+  res.json({
+    configured: isGeminiConfigured(),
+    model: GEMINI_MODEL,
+  });
+});
+
+app.post('/api/ai/assistant', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const rate = checkUserRateLimit(userId);
+    if (!rate.allowed) {
+      return res.status(429).json({
+        error: `Juda koʻp soʻrov yuborildi. Iltimos, ${rate.retryAfterSec || 10} soniyadan keyin qayta urinib koʻring.`,
+      });
+    }
+
+    const { message, history, language } = req.body as {
+      message?: unknown;
+      history?: unknown;
+      language?: unknown;
+    };
+
+    if (typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ error: 'Xabar matni kiritilmagan' });
+    }
+
+    const safeHistory: GeminiHistoryItem[] = Array.isArray(history)
+      ? history
+          .filter(
+            (h): h is GeminiHistoryItem =>
+              Boolean(h) &&
+              typeof h === 'object' &&
+              (h.role === 'user' || h.role === 'assistant') &&
+              typeof h.content === 'string'
+          )
+          .slice(-12)
+      : [];
+
+    const langHint = typeof language === 'string' ? language : 'uz';
+    const result = await runGeminiAssistantTurn({
+      user: req.user!,
+      message: message.trim(),
+      history: safeHistory,
+      language: langHint,
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error('[HISOBOT AI] /api/ai/assistant unexpected failure:', err?.message || 'unknown');
+    res.status(500).json({ error: 'AI yordamchisi javob bera olmadi. Iltimos, birozdan keyin urinib koʻring.' });
+  }
+});
+
+app.post('/api/ai/execute-action', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { confirmed, action } = req.body as { confirmed?: boolean; action?: AIProposedAction };
+    if (confirmed !== true) {
+      return res.status(400).json({ error: 'Amalni bajarish uchun foydalanuvchi tasdigʻi talab qilinadi' });
+    }
+    if (!action || typeof action !== 'object' || !action.actionType || !action.payload) {
+      return res.status(400).json({ error: 'Amal maʼlumotlari notoʻgʻri' });
+    }
+
+    const userId = req.user!.id;
+
+    if (action.actionType === 'transaction') {
+      const p = action.payload;
+      const amount = Math.round(Number(p.amount));
+      if (!p.type || amount <= 0 || !p.categoryName || !p.date) {
+        return res.status(400).json({ error: 'Tranzaksiya maʼlumotlari toʻliq emas' });
+      }
+      const categories = db.getCategories(userId);
+      const matchedCat = categories.find(
+        (c) => c.id === p.categoryId || c.name.toLowerCase() === p.categoryName.toLowerCase()
+      );
+      const created = db.addTransaction(userId, {
+        type: p.type === 'income' ? 'income' : 'expense',
+        amount,
+        categoryId: matchedCat?.id || p.categoryId || 'cat_custom',
+        categoryName: matchedCat?.name || p.categoryName,
+        date: p.date,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        description: p.description || matchedCat?.name || p.categoryName,
+        paymentMethod: p.paymentMethod || 'card',
+        notes: 'HISOBOT AI yordamchisi orqali tasdiqlab qoʻshildi',
+      });
+      return res.json({
+        success: true,
+        actionType: 'transaction',
+        summary: action.summary,
+        createdRecord: created,
+      });
+    }
+
+    if (action.actionType === 'budget') {
+      const p = action.payload;
+      const monthlyLimit = Math.round(Number(p.monthlyLimit));
+      if (!p.categoryName || monthlyLimit <= 0) {
+        return res.status(400).json({ error: 'Budjet maʼlumotlari toʻliq emas' });
+      }
+      const categories = db.getCategories(userId);
+      const matchedCat = categories.find(
+        (c) => c.id === p.categoryId || c.name.toLowerCase() === p.categoryName.toLowerCase()
+      );
+      const month = p.month || new Date().toISOString().slice(0, 7);
+      const created = db.setBudget(userId, {
+        categoryId: matchedCat?.id || p.categoryId || 'cat_custom',
+        categoryName: matchedCat?.name || p.categoryName,
+        monthlyLimit,
+        month,
+        alertThreshold: p.alertThreshold || 80,
+      });
+      return res.json({
+        success: true,
+        actionType: 'budget',
+        summary: action.summary,
+        createdRecord: created,
+      });
+    }
+
+    if (action.actionType === 'goal') {
+      const p = action.payload;
+      const targetAmount = Math.round(Number(p.targetAmount));
+      if (!p.name || targetAmount <= 0) {
+        return res.status(400).json({ error: 'Maqsad maʼlumotlari toʻliq emas' });
+      }
+      const created = db.addGoal(userId, {
+        name: p.name,
+        targetAmount,
+        savedAmount: Math.max(0, Math.round(Number(p.savedAmount) || 0)),
+        deadline: p.deadline || new Date(Date.now() + 180 * 86400000).toISOString().split('T')[0],
+        color: '#10B981',
+        icon: 'Target',
+      });
+      return res.json({
+        success: true,
+        actionType: 'goal',
+        summary: action.summary,
+        createdRecord: created,
+      });
+    }
+
+    return res.status(400).json({ error: 'Nomaʼlum amal turi' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Amalni bajarishda xatolik yuz berdi' });
+  }
+});
+
 app.post('/api/ai/parse-transaction', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { text } = req.body;
+    const { text, language } = req.body;
     if (!text || typeof text !== 'string') {
       return res.status(400).json({ error: 'Matn kiritilmagan' });
     }
     const categories = db.getCategories(req.user!.id);
-    const parsed = await parseUzbekTransactionAI(text, categories);
+    const geminiParsed = isGeminiConfigured()
+      ? await parseTransactionWithGemini(text, categories, typeof language === 'string' ? language : 'uz')
+      : null;
+    const parsed = geminiParsed || (await parseUzbekTransactionAI(text, categories, language));
     res.json({ parsed });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'AI tahlilida xatolik yuz berdi' });
@@ -536,8 +697,30 @@ app.post('/api/ai/parse-transaction', authMiddleware, async (req: AuthenticatedR
 
 app.post('/api/ai/chat', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { query } = req.body;
-    if (!query) return res.status(400).json({ error: 'Savol kiritilmagan' });
+    const { query, history, language } = req.body;
+    if (!query || typeof query !== 'string') return res.status(400).json({ error: 'Savol kiritilmagan' });
+
+    if (isGeminiConfigured()) {
+      const rate = checkUserRateLimit(req.user!.id);
+      if (!rate.allowed) {
+        return res.status(429).json({
+          error: `Juda koʻp soʻrov yuborildi. ${rate.retryAfterSec || 10} soniyadan keyin urinib koʻring.`,
+        });
+      }
+      const turn = await runGeminiAssistantTurn({
+        user: req.user!,
+        message: query,
+        history: Array.isArray(history) ? history : [],
+        language: typeof language === 'string' ? language : 'uz',
+      });
+      return res.json({
+        answer: turn.reply,
+        structuredRows: turn.structuredRows,
+        proposedAction: turn.proposedAction,
+        source: turn.source,
+        warning: turn.warning,
+      });
+    }
 
     const userId = req.user!.id;
     const allTx = db.getTransactions(userId);
@@ -560,7 +743,6 @@ app.post('/api/ai/chat', authMiddleware, async (req: AuthenticatedRequest, res: 
     const lastMonthIncome = lastMonthTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
     const lastMonthExpense = lastMonthTx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
 
-    // Categories breakdown
     const catExpMap: Record<string, number> = {};
     thisMonthTx.filter((t) => t.type === 'expense').forEach((t) => {
       catExpMap[t.categoryName] = (catExpMap[t.categoryName] || 0) + t.amount;
@@ -573,7 +755,6 @@ app.post('/api/ai/chat', authMiddleware, async (req: AuthenticatedRequest, res: 
       }))
       .sort((a, b) => b.amount - a.amount);
 
-    // Budgets
     const budgets = db.getBudgets(userId).map((b) => {
       const spent = thisMonthTx
         .filter((t) => t.type === 'expense' && (t.categoryId === b.categoryId || t.categoryName === b.categoryName))
@@ -586,7 +767,6 @@ app.post('/api/ai/chat', authMiddleware, async (req: AuthenticatedRequest, res: 
       };
     });
 
-    // Goals
     const goals = db.getGoals(userId).map((g) => ({
       name: g.name,
       target: g.targetAmount,
@@ -594,7 +774,6 @@ app.post('/api/ai/chat', authMiddleware, async (req: AuthenticatedRequest, res: 
       percent: Math.round((g.savedAmount / g.targetAmount) * 100),
     }));
 
-    // Debts
     const debts = db.getDebts(userId);
     const debtsSummary = {
       totalBorrowed: debts.filter((d) => d.type === 'borrowed').reduce((s, d) => s + d.remainingAmount, 0),
@@ -623,7 +802,7 @@ app.post('/api/ai/chat', authMiddleware, async (req: AuthenticatedRequest, res: 
       })),
     });
 
-    res.json({ answer });
+    res.json({ answer, source: 'fallback' });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Xatolik yuz berdi' });
   }
@@ -892,7 +1071,10 @@ app.post('/api/receipts/scan', authMiddleware, async (req: AuthenticatedRequest,
     const { imageBase64OrText } = req.body;
     const categories = db.getCategories(req.user!.id);
     const existingReceipts = db.getReceipts(req.user!.id);
-    const parsed = await parseReceiptAI(imageBase64OrText || '', categories, existingReceipts);
+    const geminiReceipt = isGeminiConfigured()
+      ? await parseReceiptWithGemini(imageBase64OrText || '', categories, existingReceipts)
+      : null;
+    const parsed = geminiReceipt || (await parseReceiptAI(imageBase64OrText || '', categories, existingReceipts));
     res.json({ parsed });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Chekni skanerlashda xatolik' });

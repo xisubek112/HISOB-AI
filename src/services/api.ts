@@ -13,6 +13,8 @@ import {
   NotificationItem,
   FinancialSummary,
   AIParsedTransaction,
+  AIProposedAction,
+  AIChatMessage,
   Wallet,
   WalletTransfer,
   FamilyGroup,
@@ -333,6 +335,39 @@ class ApiService {
   }
 
   // --- AI Assistant & Brain ---
+  async getAIStatus(): Promise<{ configured: boolean; model: string }> {
+    return this.request<{ configured: boolean; model: string }>('/api/ai/status');
+  }
+
+  async askAIAssistant(
+    message: string,
+    history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+    language: string = 'uz'
+  ): Promise<{
+    reply: string;
+    structuredRows?: AIChatMessage['structuredRows'];
+    proposedAction?: AIProposedAction;
+    source: 'gemini' | 'fallback';
+    warning?: string;
+  }> {
+    return this.request('/api/ai/assistant', {
+      method: 'POST',
+      body: JSON.stringify({ message, history, language }),
+    });
+  }
+
+  async executeAIAction(action: AIProposedAction): Promise<{
+    success: boolean;
+    actionType: AIProposedAction['actionType'];
+    summary: string;
+    createdRecord: any;
+  }> {
+    return this.request('/api/ai/execute-action', {
+      method: 'POST',
+      body: JSON.stringify({ confirmed: true, action }),
+    });
+  }
+
   async parseAITransaction(text: string, language: string = 'uz'): Promise<{ parsed: AIParsedTransaction }> {
     return this.request<{ parsed: AIParsedTransaction }>('/api/ai/parse-transaction', {
       method: 'POST',

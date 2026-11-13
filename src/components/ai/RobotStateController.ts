@@ -4,8 +4,9 @@ import { RobotState } from './types.ts';
 export const ROBOT_STATUS_MESSAGES: Record<RobotState, string> = {
   idle: 'Savol bering yoki operatsiya kiriting',
   listening: 'Sizni tinglayapman...',
-  thinking: "Moliyaviy ma'lumotlaringiz tahlil qilinmoqda...",
+  thinking: 'Gemini AI tahlil qilmoqda...',
   speaking: 'HISOBOT AI javob bermoqda...',
+  paused: 'Ovozli suhbat pauzada',
   success: 'Muvaffaqiyatli bajarildi!',
   error: 'Xatolik yuz berdi — qayta urinib koʻring',
 };
@@ -44,6 +45,7 @@ export function useRobotStateController() {
   const setListening = useCallback(() => setState('listening'), [setState]);
   const setThinking = useCallback(() => setState('thinking'), [setState]);
   const setSpeaking = useCallback(() => setState('speaking'), [setState]);
+  const setPaused = useCallback(() => setState('paused'), [setState]);
   const setSuccess = useCallback(
     (msg?: string) => setState('success', msg, 2400),
     [setState]
@@ -61,6 +63,7 @@ export function useRobotStateController() {
     setListening,
     setThinking,
     setSpeaking,
+    setPaused,
     setSuccess,
     setError,
   };

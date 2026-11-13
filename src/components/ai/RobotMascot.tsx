@@ -25,6 +25,8 @@ export const RobotMascot: React.FC<RobotMascotProps> = ({
   const glowColor =
     state === 'error'
       ? 'rgba(239, 68, 68, 0.34)'
+      : state === 'paused'
+      ? 'rgba(245, 158, 11, 0.32)'
       : state === 'listening'
       ? 'rgba(6, 182, 212, 0.42)'
       : state === 'thinking'
@@ -34,6 +36,8 @@ export const RobotMascot: React.FC<RobotMascotProps> = ({
   const accentStroke =
     state === 'error'
       ? '#EF4444'
+      : state === 'paused'
+      ? '#F59E0B'
       : state === 'listening'
       ? '#06B6D4'
       : state === 'success'
@@ -61,8 +65,14 @@ export const RobotMascot: React.FC<RobotMascotProps> = ({
               />
             </>
           )}
+          {state === 'speaking' && (
+            <span className="hai-voice-ring pointer-events-none absolute inset-2 rounded-full border-2 border-emerald-400/55" />
+          )}
           {state === 'thinking' && (
             <span className="pointer-events-none absolute inset-2 rounded-full border border-dashed border-emerald-400/55 animate-spin [animation-duration:7s]" />
+          )}
+          {state === 'paused' && (
+            <span className="pointer-events-none absolute inset-2 rounded-full border-2 border-dashed border-amber-400/55" />
           )}
           {state === 'success' && (
             <span className="pointer-events-none absolute inset-2 rounded-full border-2 border-emerald-400/70 animate-pulse" />
@@ -269,6 +279,11 @@ export const RobotMascot: React.FC<RobotMascotProps> = ({
             <path d="M 80 78 L 94 86 M 94 78 L 80 86" stroke="#EF4444" strokeWidth="3.2" strokeLinecap="round" />
             <path d="M 126 78 L 140 86 M 140 78 L 126 86" stroke="#EF4444" strokeWidth="3.2" strokeLinecap="round" />
           </>
+        ) : state === 'paused' ? (
+          <>
+            <line x1="78" y1="81" x2="96" y2="81" stroke="#FBBF24" strokeWidth="4" strokeLinecap="round" />
+            <line x1="124" y1="81" x2="142" y2="81" stroke="#FBBF24" strokeWidth="4" strokeLinecap="round" />
+          </>
         ) : state === 'success' ? (
           <>
             <path d="M 79 84 Q 87 74 95 84" fill="none" stroke="#34D399" strokeWidth="3.8" strokeLinecap="round" />
@@ -314,6 +329,11 @@ export const RobotMascot: React.FC<RobotMascotProps> = ({
           </g>
         ) : state === 'listening' ? (
           <circle cx="110" cy="99" r="4.5" fill="#06B6D4" className="animate-ping" />
+        ) : state === 'paused' ? (
+          <g>
+            <rect x="104" y="94" width="3.5" height="9" rx="1.5" fill="#FBBF24" />
+            <rect x="112" y="94" width="3.5" height="9" rx="1.5" fill="#FBBF24" />
+          </g>
         ) : state === 'error' ? (
           <path d="M 100 101 Q 110 95 120 101" fill="none" stroke="#EF4444" strokeWidth="2.8" strokeLinecap="round" />
         ) : (

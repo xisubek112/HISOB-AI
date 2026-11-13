@@ -132,18 +132,48 @@ export interface AIParsedTransaction {
   clarificationQuestion?: string;
 }
 
+export type AIProposedAction =
+  | {
+      actionType: 'transaction';
+      summary: string;
+      payload: AIParsedTransaction;
+    }
+  | {
+      actionType: 'budget';
+      summary: string;
+      payload: {
+        categoryName: string;
+        categoryId?: string;
+        monthlyLimit: number;
+        month: string;
+        alertThreshold: number;
+      };
+    }
+  | {
+      actionType: 'goal';
+      summary: string;
+      payload: {
+        name: string;
+        targetAmount: number;
+        savedAmount: number;
+        deadline: string;
+      };
+    };
+
 export interface AIChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
   parsedTransaction?: AIParsedTransaction;
+  proposedAction?: AIProposedAction;
   confirmationState?: 'pending' | 'confirmed' | 'cancelled';
   scannedReceipt?: Omit<ScannedReceipt, 'id' | 'userId' | 'createdAt'>;
   receiptSaved?: boolean;
   structuredRows?: { label: string; value: string; tone?: 'emerald' | 'rose' | 'teal' | 'amber' }[];
   isError?: boolean;
   retryQuery?: string;
+  source?: 'gemini' | 'fallback';
 }
 
 export interface FinancialSummary {

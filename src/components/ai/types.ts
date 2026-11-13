@@ -5,6 +5,7 @@ export type RobotState =
   | 'listening'
   | 'thinking'
   | 'speaking'
+  | 'paused'
   | 'success'
   | 'error';
 

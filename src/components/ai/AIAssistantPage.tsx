@@ -9,6 +9,7 @@ import {
 import {
   AIChatMessage,
   AIParsedTransaction,
+  AIProposedAction,
   Transaction,
   FinancialHealthScore,
 } from '../../types/finance.ts';
@@ -52,11 +53,23 @@ function createInitialConversation(fullName?: string): AIConversation {
       {
         id: 'welcome',
         role: 'assistant',
-        content: `Assalomu alaykum${greetingName}! Men sizning aqlli moliyaviy miyangiz — **HISOBOT AI** man.\n\nXarajat va daromadlaringizni oddiy soʻz bilan yozing (masalan: «Bugun 150 ming ovqatga sarfladim»), chek yuklang yoki moliyaviy tahlil soʻrang.`,
+        content: `Assalomu alaykum${greetingName}! Men sizning aqlli moliyaviy miyangiz — **HISOBOT AI** man.\n\nOʻzbek, rus yoki ingliz tillarida bemalol suhbatlashing, xarajat-daromadlaringizni yozing, budjet yoki maqsad tuzing, chek yuklang yoki ovozli rejimda gaplashing.`,
         timestamp: nowStr,
       },
     ],
   };
+}
+
+function detectSpeechLocale(text: string): string {
+  const sample = text.trim();
+  if (/[\u0400-\u04FF]{2,}/.test(sample)) return 'ru-RU';
+  const lower = sample.toLowerCase();
+  if (
+    /\b(the|your|you|today|month|balance|budget|expenses|income|hello|please)\b/.test(lower)
+  ) {
+    return 'en-US';
+  }
+  return 'uz-UZ';
 }
 
 export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
@@ -156,12 +169,13 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
   }, [ttsSupported, setIdle]);
 
   const speakText = useCallback(
-    (text: string, msgId: string) => {
+    (text: string, msgId: string, preferredLang?: string) => {
       if (!ttsSupported) return;
       try {
         window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'uz-UZ';
+        const cleanText = text.replace(/\*\*/g, '');
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.lang = preferredLang || detectSpeechLocale(cleanText);
         utterance.rate = 1.02;
         utterance.onstart = () => {
           setSpeakingMsgId(msgId);
@@ -206,138 +220,163 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
     [activeConv?.id]
   );
 
-  const handleSend = async (textToSend?: string) => {
-    const query = (textToSend ?? input).trim();
-    if (!query || loading) return;
+  const executeAssistantTurn = useCallback(
+    async (
+      query: string,
+      options?: { speakReply?: boolean; languageHint?: string; clearInput?: boolean }
+    ): Promise<AIChatMessage | null> => {
+      const clean = query.trim();
+      if (!clean) return null;
 
-    stopSpeaking();
+      stopSpeaking();
 
-    const nowTime = new Date().toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+      const recentHistory = messages
+        .filter((m) => !m.isError && m.id !== 'welcome')
+        .slice(-12)
+        .map((m) => ({ role: m.role, content: m.content }));
 
-    const userMsg: AIChatMessage = {
-      id: `msg_u_${Date.now()}`,
-      role: 'user',
-      content: query,
-      timestamp: nowTime,
-    };
+      const nowTime = new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
 
-    appendMessagesToActive([userMsg], query);
-    if (!textToSend) setInput('');
-    setLoading(true);
-    setThinking();
+      const userMsg: AIChatMessage = {
+        id: `msg_u_${Date.now()}`,
+        role: 'user',
+        content: clean,
+        timestamp: nowTime,
+      };
 
-    try {
-      const qLower = query.toLowerCase();
-      const isQuestion =
-        query.includes('?') ||
-        qLower.includes('qancha') ||
-        qLower.includes('nimaga') ||
-        qLower.includes('qayerda') ||
-        qLower.includes('qayerdan') ||
-        qLower.includes('tahlil') ||
-        qLower.includes('budjet') ||
-        qLower.includes('reja') ||
-        qLower.includes('maqsad') ||
-        qLower.includes('prognoz') ||
-        qLower.includes('maslahat') ||
-        qLower.includes('taqqos') ||
-        qLower.includes('holat') ||
-        qLower.includes('balans') ||
-        qLower.includes('koʻp pul') ||
-        qLower.includes("ko'p pul");
+      appendMessagesToActive([userMsg], clean);
+      if (options?.clearInput) setInput('');
+      setLoading(true);
+      setThinking();
 
-      if (isQuestion) {
-        const res = await api.askAIChat(query);
-        let structuredRows: AIChatMessage['structuredRows'];
-
-        if (qLower.includes('prognoz') || qLower.includes('kelgusi oy')) {
-          try {
-            const fRes = await api.getForecast();
-            const f = fRes.forecast;
-            structuredRows = [
-              {
-                label: 'Oy yakuni taxminiy balans',
-                value: formatMoney(f.monthEndExpectedBalance),
-                tone: 'emerald',
-              },
-              {
-                label: 'Kutilayotgan xarajatlar',
-                value: formatMoney(f.expectedMonthlyExpenses),
-                tone: 'rose',
-              },
-              {
-                label: 'Kutilayotgan jamgʻarma',
-                value: formatMoney(f.expectedSavings),
-                tone: 'teal',
-              },
-              {
-                label: 'Prognoz ishonchliligi',
-                value: `${f.confidenceScore}%`,
-                tone: 'amber',
-              },
-            ];
-          } catch {
-            // proceed with chat text only
-          }
-        }
+      try {
+        const res = await api.askAIAssistant(
+          clean,
+          recentHistory,
+          options?.languageHint || 'uz'
+        );
 
         const assistantId = `msg_a_${Date.now()}`;
+        const fullContent = res.warning
+          ? `${res.reply}\n\n(${res.warning})`
+          : res.reply;
+
         const assistantMsg: AIChatMessage = {
           id: assistantId,
           role: 'assistant',
-          content: res.answer,
+          content: fullContent,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          structuredRows,
+          structuredRows: res.structuredRows,
+          proposedAction: res.proposedAction,
+          confirmationState: res.proposedAction ? 'pending' : undefined,
+          source: res.source,
         };
+
         appendMessagesToActive([assistantMsg]);
 
-        if (autoSpeak && ttsSupported) {
-          speakText(res.answer.replace(/\*\*/g, ''), assistantId);
+        if ((options?.speakReply ?? autoSpeak) && ttsSupported) {
+          speakText(res.reply, assistantId, options?.languageHint);
         } else {
-          setSuccess('Tahlil tayyor!');
-        }
-      } else {
-        const res = await api.parseAITransaction(query);
-        const parsed = res.parsed;
-
-        let content = '';
-        if (parsed.missingFields && parsed.missingFields.length > 0) {
-          content =
-            parsed.clarificationQuestion ||
-            'Tranzaksiyani toʻliq saqlash uchun summa yetishmayapti. Iltimos, summani kiriting.';
-        } else {
-          content =
-            'Xabaringizdan quyidagi operatsiyani aniqladim. Tasdiqlasangiz bazaga saqlayman:';
+          setSuccess(res.proposedAction ? 'Amal tayyorlandi!' : 'Javob tayyor!');
         }
 
-        const assistantMsg: AIChatMessage = {
-          id: `msg_a_${Date.now()}`,
+        return assistantMsg;
+      } catch (err: any) {
+        const errMsg: AIChatMessage = {
+          id: `msg_err_${Date.now()}`,
           role: 'assistant',
-          content,
+          content: `Soʻrovni qayta ishlashda xatolik yuz berdi: ${
+            err?.message || 'Serverga ulanib boʻlmadi'
+          }.`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          parsedTransaction: parsed.amount > 0 ? parsed : undefined,
-          confirmationState: parsed.amount > 0 ? 'pending' : undefined,
+          isError: true,
+          retryQuery: clean,
         };
-
-        appendMessagesToActive([assistantMsg]);
-        setSuccess(parsed.amount > 0 ? 'Operatsiya aniqlandi!' : undefined);
+        appendMessagesToActive([errMsg]);
+        setError('Server bilan aloqada xatolik');
+        throw err;
+      } finally {
+        setLoading(false);
       }
+    },
+    [
+      appendMessagesToActive,
+      autoSpeak,
+      messages,
+      setError,
+      setSuccess,
+      setThinking,
+      speakText,
+      stopSpeaking,
+      ttsSupported,
+    ]
+  );
+
+  const handleSend = async (textToSend?: string) => {
+    const query = (textToSend ?? input).trim();
+    if (!query || loading) return;
+    try {
+      await executeAssistantTurn(query, { clearInput: !textToSend });
+    } catch {
+      // handled in executeAssistantTurn
+    }
+  };
+
+  const handleConfirmProposedAction = async (msgId: string, action: AIProposedAction) => {
+    try {
+      setLoading(true);
+      setThinking();
+      const res = await api.executeAIAction(action);
+
+      let confirmedText = 'Amal muvaffaqiyatli bazaga saqlandi!';
+      if (action.actionType === 'transaction') {
+        const p = action.payload;
+        confirmedText = `Tranzaksiya saqlandi! ${p.type === 'income' ? 'Kirim' : 'Chiqim'}: **${
+          p.type === 'income' ? '+' : '-'
+        }${formatMoney(p.amount)}** (${p.categoryName}).`;
+      } else if (action.actionType === 'budget') {
+        const p = action.payload;
+        confirmedText = `Budjet limiti saqlandi! **${p.categoryName}** — oylik **${formatMoney(
+          p.monthlyLimit
+        )}**.`;
+      } else if (action.actionType === 'goal') {
+        const p = action.payload;
+        confirmedText = `Moliyaviy maqsad yaratildi! **${p.name}** (${formatMoney(
+          p.targetAmount
+        )}).`;
+      }
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id !== activeConv?.id
+            ? c
+            : {
+                ...c,
+                messages: c.messages.map((m) =>
+                  m.id === msgId
+                    ? {
+                        ...m,
+                        confirmationState: 'confirmed',
+                        content: confirmedText,
+                      }
+                    : m
+                ),
+              }
+        )
+      );
+
+      toast.success('Muvaffaqiyatli saqlandi');
+      onTransactionSaved((res.createdRecord || {}) as Transaction);
+      await loadHealth();
+      setSuccess('Bazaga saqlandi!');
+      return confirmedText;
     } catch (err: any) {
-      const errMsg: AIChatMessage = {
-        id: `msg_err_${Date.now()}`,
-        role: 'assistant',
-        content: `Soʻrovni qayta ishlashda xatolik yuz berdi: ${
-          err?.message || 'Serverga ulanib boʻlmadi'
-        }.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isError: true,
-        retryQuery: query,
-      };
-      appendMessagesToActive([errMsg]);
-      setError('Server bilan aloqada xatolik');
+      toast.error(err?.message || 'Amalni saqlashda xatolik yuz berdi');
+      setError('Saqlashda xatolik');
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -625,8 +664,10 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                       robotState === 'listening'
                         ? 'bg-cyan-500/15 border-cyan-400/40 text-cyan-600 dark:text-cyan-300'
-                        : robotState === 'thinking'
+                        : robotState === 'thinking' || robotState === 'speaking'
                         ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-600 dark:text-emerald-300'
+                        : robotState === 'paused'
+                        ? 'bg-amber-500/15 border-amber-400/40 text-amber-600 dark:text-amber-300'
                         : robotState === 'error'
                         ? 'bg-rose-500/15 border-rose-400/40 text-rose-600 dark:text-rose-300'
                         : 'bg-emerald-500/12 border-emerald-500/25 text-emerald-700 dark:text-emerald-300'
@@ -636,6 +677,8 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
                       className={`w-1.5 h-1.5 rounded-full ${
                         robotState === 'error'
                           ? 'bg-rose-500'
+                          : robotState === 'paused'
+                          ? 'bg-amber-400'
                           : robotState === 'listening'
                           ? 'bg-cyan-400 animate-ping'
                           : 'bg-emerald-400'
@@ -733,6 +776,7 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
                     onSpeak={speakText}
                     onStopSpeak={stopSpeaking}
                     onConfirmTransaction={handleConfirmTransaction}
+                    onConfirmProposedAction={handleConfirmProposedAction}
                     onCancelTransaction={handleCancelTransaction}
                     onSaveReceipt={handleSaveScannedReceipt}
                     onRetry={(q) => handleSend(q)}
@@ -836,10 +880,11 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
           setVoiceOverlayOpen(false);
           setIdle();
         }}
-        onSubmitTranscript={(spokenText) => {
-          setVoiceOverlayOpen(false);
-          handleSend(spokenText);
-        }}
+        onSendVoiceMessage={(spokenText, langCode) =>
+          executeAssistantTurn(spokenText, { speakReply: false, languageHint: langCode })
+        }
+        onConfirmVoiceAction={(msgId, action) => handleConfirmProposedAction(msgId, action)}
+        onCancelVoiceAction={(msgId) => handleCancelTransaction(msgId)}
       />
     </div>
   );

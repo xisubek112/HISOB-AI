@@ -9,8 +9,10 @@ import {
   Square,
   Receipt,
   AlertCircle,
+  Target,
+  Wallet,
 } from 'lucide-react';
-import { AIChatMessage, AIParsedTransaction } from '../../types/finance.ts';
+import { AIChatMessage, AIParsedTransaction, AIProposedAction } from '../../types/finance.ts';
 import { formatMoney, formatDateUz, PAYMENT_METHODS_MAP } from '../../utils/formatters.ts';
 import { Button } from '../../design-system/index.ts';
 import { RobotMascot } from './RobotMascot.tsx';
@@ -24,6 +26,7 @@ interface ChatMessageProps {
   onStopSpeak?: () => void;
   onConfirmTransaction: (msgId: string, parsed: AIParsedTransaction) => void;
   onCancelTransaction: (msgId: string) => void;
+  onConfirmProposedAction?: (msgId: string, action: AIProposedAction) => void;
   onSaveReceipt?: (msgId: string) => void;
   onRetry?: (query: string) => void;
 }
@@ -54,6 +57,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
   onStopSpeak,
   onConfirmTransaction,
   onCancelTransaction,
+  onConfirmProposedAction,
   onSaveReceipt,
   onRetry,
 }) => {
@@ -131,8 +135,144 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
             </div>
           )}
 
-          {/* Transaction Confirmation Card */}
-          {message.parsedTransaction && message.confirmationState === 'pending' && (
+          {/* Proposed Action Confirmation Card (Gemini Function Calling: Transaction / Budget / Goal) */}
+          {message.proposedAction && message.confirmationState === 'pending' && (
+            <div className="mt-3.5 p-3.5 bg-slate-50 dark:bg-[#111B27] rounded-xl border border-emerald-500/25 text-slate-900 dark:text-slate-100 space-y-3">
+              {message.proposedAction.actionType === 'transaction' && (
+                <>
+                  <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-200/70 dark:border-white/[0.08] text-xs">
+                    <span className="font-bold flex items-center gap-1.5">
+                      {message.proposedAction.payload.type === 'income' ? (
+                        <ArrowDownLeft className="w-4 h-4 text-emerald-500" />
+                      ) : (
+                        <ArrowUpRight className="w-4 h-4 text-rose-500" />
+                      )}
+                      <span>
+                        {message.proposedAction.payload.type === 'income' ? 'Kirim' : 'Chiqim'} operatsiyasi
+                      </span>
+                    </span>
+                    <span
+                      className={`font-mono font-bold tabular-nums text-sm ${
+                        message.proposedAction.payload.type === 'income'
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-rose-600 dark:text-rose-400'
+                      }`}
+                    >
+                      {message.proposedAction.payload.type === 'income' ? '+' : '-'}
+                      {formatMoney(message.proposedAction.payload.amount)}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5 text-[11px]">
+                    <div>
+                      <span className="text-slate-400 block">Toifa</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {message.proposedAction.payload.categoryName}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Sana</span>
+                      <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                        {formatDateUz(message.proposedAction.payload.date)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Tavsif</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200 break-words">
+                        {message.proposedAction.payload.description}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Toʻlov usuli</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {PAYMENT_METHODS_MAP[message.proposedAction.payload.paymentMethod]?.label ||
+                          message.proposedAction.payload.paymentMethod}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {message.proposedAction.actionType === 'budget' && (
+                <>
+                  <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-200/70 dark:border-white/[0.08] text-xs">
+                    <span className="font-bold flex items-center gap-1.5 text-cyan-600 dark:text-cyan-300">
+                      <Wallet className="w-4 h-4" />
+                      <span>Oylik budjet rejasi</span>
+                    </span>
+                    <span className="font-mono font-bold tabular-nums text-sm text-emerald-600 dark:text-emerald-400">
+                      {formatMoney(message.proposedAction.payload.monthlyLimit)}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5 text-[11px]">
+                    <div>
+                      <span className="text-slate-400 block">Toifa</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {message.proposedAction.payload.categoryName}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Ogohlantirish chegarasi</span>
+                      <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                        {message.proposedAction.payload.alertThreshold}%
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {message.proposedAction.actionType === 'goal' && (
+                <>
+                  <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-200/70 dark:border-white/[0.08] text-xs">
+                    <span className="font-bold flex items-center gap-1.5 text-emerald-600 dark:text-emerald-300">
+                      <Target className="w-4 h-4" />
+                      <span>Yangi moliyaviy maqsad</span>
+                    </span>
+                    <span className="font-mono font-bold tabular-nums text-sm text-emerald-600 dark:text-emerald-400">
+                      {formatMoney(message.proposedAction.payload.targetAmount)}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5 text-[11px]">
+                    <div>
+                      <span className="text-slate-400 block">Maqsad nomi</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {message.proposedAction.payload.name}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Muddat</span>
+                      <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                        {formatDateUz(message.proposedAction.payload.deadline)}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="pt-1 flex items-center gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  fullWidth
+                  disabled={loading}
+                  leadingIcon={<Check className="w-3.5 h-3.5" />}
+                  onClick={() => onConfirmProposedAction?.(message.id, message.proposedAction!)}
+                >
+                  Tasdiqlash
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={loading}
+                  onClick={() => onCancelTransaction(message.id)}
+                >
+                  Bekor qilish
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Legacy Transaction Confirmation Card */}
+          {!message.proposedAction && message.parsedTransaction && message.confirmationState === 'pending' && (
             <div className="mt-3.5 p-3.5 bg-slate-50 dark:bg-[#111B27] rounded-xl border border-slate-200 dark:border-white/[0.10] text-slate-900 dark:text-slate-100 space-y-3">
               <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-200/70 dark:border-white/[0.08] text-xs">
                 <span className="font-bold flex items-center gap-1.5">
