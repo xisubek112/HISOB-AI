@@ -14,7 +14,6 @@ import {
   ShieldCheck,
   RefreshCw,
   Settings as SettingsIcon,
-  Lock,
 } from 'lucide-react';
 import { Badge, Button, Card, useToast } from '../../design-system/index.ts';
 import {
@@ -23,12 +22,9 @@ import {
   PermissionKey,
   PermissionSummary,
   getAllPermissionSummaries,
-  isBiometricLockEnabled,
   openAppSettings,
   requestPermission,
-  setBiometricLockEnabled,
   setPrivacyControl,
-  verifyBiometricIdentity,
 } from '../../services/permissions.ts';
 
 const ICONS: Record<PermissionKey, React.ReactNode> = {
@@ -63,7 +59,6 @@ export const PrivacyPermissionsSection: React.FC = () => {
   const [summaries, setSummaries] = useState<PermissionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeKey, setActiveKey] = useState<PermissionKey | null>(null);
-  const [biometricLock, setBiometricLock] = useState<boolean>(() => isBiometricLockEnabled());
 
   const loadStates = useCallback(async () => {
     setLoading(true);
@@ -98,9 +93,6 @@ export const PrivacyPermissionsSection: React.FC = () => {
 
   const handleToggleFeature = (key: PermissionKey, enabled: boolean) => {
     setPrivacyControl(key, enabled);
-    if (key === 'biometric' && !enabled) {
-      setBiometricLock(false);
-    }
     setSummaries((prev) =>
       prev.map((item) => (item.key === key ? { ...item, featureEnabled: enabled } : item))
     );
@@ -109,27 +101,6 @@ export const PrivacyPermissionsSection: React.FC = () => {
         ? 'Funksiya maxfiylik sozlamalarida yoqildi'
         : 'Funksiya maxfiylik sozlamalarida oʻchirildi'
     );
-  };
-
-  const handleToggleBiometricLock = async () => {
-    if (biometricLock) {
-      setBiometricLockEnabled(false);
-      setBiometricLock(false);
-      toast.info('Biometrik qulf oʻchirildi');
-      return;
-    }
-
-    const res = await verifyBiometricIdentity(
-      'HISOBOT AI uchun biometrik qulfni yoqishni tasdiqlang'
-    );
-    if (res.verified) {
-      setPrivacyControl('biometric', true);
-      setBiometricLockEnabled(true);
-      setBiometricLock(true);
-      toast.success('Biometrik qulf muvaffaqiyatli yoqildi');
-    } else {
-      toast.error(res.error || 'Biometrik tasdiqlash bajarilmadi');
-    }
   };
 
   const handleOpenSettings = async () => {
@@ -214,16 +185,6 @@ export const PrivacyPermissionsSection: React.FC = () => {
               </div>
 
               <div className="flex flex-wrap items-center gap-2 shrink-0 md:justify-end">
-                {item.key === 'biometric' && item.hardwareAvailable && item.featureEnabled && (
-                  <Button
-                    variant={biometricLock ? 'secondary' : 'outline'}
-                    size="sm"
-                    leadingIcon={<Lock className="w-3.5 h-3.5" />}
-                    onClick={handleToggleBiometricLock}
-                  >
-                    {biometricLock ? 'Ilova qulfi: Yoqilgan' : 'Ilova qulfini yoqish'}
-                  </Button>
-                )}
 
                 {item.key !== 'biometric' &&
                   item.key !== 'photos' &&

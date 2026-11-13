@@ -16,6 +16,7 @@ interface AuthContextType {
   register: (email: string, pass: string, fullName: string) => Promise<void>;
   loginDemo: () => Promise<void>;
   logout: () => Promise<void>;
+  logoutAll: () => Promise<void>;
   updateUser: (updates: Partial<UserProfile>) => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -101,6 +102,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
   };
 
+  const logoutAll = async () => {
+    await api.logoutAll();
+    setUser(null);
+  };
+
   const updateUser = async (updates: Partial<UserProfile>) => {
     const res = await api.updateProfile(updates);
     setUser(res.user);
@@ -118,6 +124,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         register,
         loginDemo,
         logout,
+        logoutAll,
         updateUser,
         refreshUser,
       }}

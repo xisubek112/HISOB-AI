@@ -16,6 +16,11 @@ import {
   Sparkles,
   ArrowRight,
   Check,
+  Lock,
+  Fingerprint,
+  KeyRound,
+  Timer,
+  LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { api } from '../../services/api.ts';
@@ -30,6 +35,7 @@ import {
 } from '../../design-system/index.ts';
 import { PrivacyPermissionsSection } from '../settings/PrivacyPermissionsSection.tsx';
 import { PermissionPromptModal } from '../modals/PermissionPromptModal.tsx';
+import { PinSetupModal, PinSetupMode } from '../security/PinSetupModal.tsx';
 import {
   AppPermissionStatus,
   checkPermission,
@@ -40,16 +46,37 @@ import {
   setPrivacyControl,
   wasNotificationPromptDismissed,
 } from '../../services/permissions.ts';
+import {
+  AppLockConfig,
+  AutoLockSeconds,
+  BiometricCapability,
+  checkBiometricCapability,
+  getAppLockConfig,
+  lockAppNow,
+  setAutoLockTimeout,
+  setBiometricUnlockEnabled,
+} from '../../services/appLock.ts';
 
 interface SettingsViewProps {
   onOpenPremiumModal?: () => void;
+  onRequireAuth?: () => void;
 }
 
 const formatUzNumber = (num: number) =>
   new Intl.NumberFormat('uz-UZ').format(num).replace(/,/g, ' ');
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }) => {
-  const { user, updateUser, theme, toggleTheme } = useAuth();
+const AUTO_LOCK_OPTIONS: { label: string; value: AutoLockSeconds }[] = [
+  { label: 'Darhol', value: 0 },
+  { label: '30 soniya', value: 30 },
+  { label: '1 daqiqa', value: 60 },
+  { label: '5 daqiqa', value: 300 },
+];
+
+export const SettingsView: React.FC<SettingsViewProps> = ({
+  onOpenPremiumModal,
+  onRequireAuth,
+}) => {
+  const { user, updateUser, logoutAll, theme, toggleTheme } = useAuth();
   const toast = useToast();
   const [avatarError, setAvatarError] = useState(false);
 
@@ -70,10 +97,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
 
   const [savingProfile, setSavingProfile] = useState(false);
   const [changingPass, setChangingPass] = useState(false);
+  const [loggingOutAll, setLoggingOutAll] = useState(false);
   const [profileNotice, setProfileNotice] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [passNotice, setPassNotice] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [notifPromptOpen, setNotifPromptOpen] = useState(false);
   const [notifStatus, setNotifStatus] = useState<AppPermissionStatus>('prompt');
+
+  // App Lock (PIN & Biometrics) state
+  const [appLockConfig, setAppLockConfig] = useState<AppLockConfig | null>(() =>
+    user?.id ? getAppLockConfig(user.id) : null
+  );
+  const [biometricCap, setBiometricCap] = useState<BiometricCapability | null>(null);
+  const [biometricToggling, setBiometricToggling] = useState(false);
+  const [pinModalState, setPinModalState] = useState<{ open: boolean; mode: PinSetupMode }>({
+    open: false,
+    mode: 'create',
+  });
+
+  const reloadAppLock = () => {
+    if (!user?.id) return;
+    setAppLockConfig(getAppLockConfig(user.id));
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -84,7 +128,81 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
     setDebtReminders(user.notificationPrefs?.debtReminders ?? true);
     setGoalMilestones(user.notificationPrefs?.goalMilestones ?? true);
     setWeeklySummary(user.notificationPrefs?.weeklySummary ?? true);
+    setAppLockConfig(getAppLockConfig(user.id));
   }, [user]);
+
+  useEffect(() => {
+    let mounted = true;
+    checkBiometricCapability().then((cap) => {
+      if (mounted) setBiometricCap(cap);
+    });
+    const onLockChange = () => reloadAppLock();
+    window.addEventListener('hisobot:applock-changed', onLockChange);
+    return () => {
+      mounted = false;
+      window.removeEventListener('hisobot:applock-changed', onLockChange);
+    };
+  }, [user?.id]);
+
+  const notifyLockUpdated = () => {
+    reloadAppLock();
+    window.dispatchEvent(new CustomEvent('hisobot:applock-changed'));
+  };
+
+  const handleToggleBiometric = async () => {
+    if (!user?.id || !appLockConfig) return;
+    if (!appLockConfig.pinEnabled) {
+      toast.info('Avval PIN-kod himoyasini yoqing');
+      setPinModalState({ open: true, mode: 'create' });
+      return;
+    }
+
+    setBiometricToggling(true);
+    try {
+      const next = !appLockConfig.biometricEnabled;
+      const res = await setBiometricUnlockEnabled(user.id, next);
+      setAppLockConfig(res.config);
+      if (res.error) {
+        toast.error(res.error);
+      } else {
+        toast.success(next ? 'Biometrik kirish yoqildi' : 'Biometrik kirish oʻchirildi');
+        notifyLockUpdated();
+      }
+    } finally {
+      setBiometricToggling(false);
+    }
+  };
+
+  const handleAutoLockChange = (seconds: AutoLockSeconds) => {
+    if (!user?.id) return;
+    const updated = setAutoLockTimeout(user.id, seconds);
+    setAppLockConfig(updated);
+    notifyLockUpdated();
+    const label = AUTO_LOCK_OPTIONS.find((o) => o.value === seconds)?.label || '';
+    toast.success(`Avtomatik bloklash: ${label}`);
+  };
+
+  const handleLogoutAllDevices = async () => {
+    const confirmed = await toast.confirm({
+      title: 'Barcha qurilmalardan chiqish',
+      message:
+        'Barcha faol qurilma va brauzerlardagi sessiyalar yopiladi. Davom etish uchun qayta kirish talab qilinadi.',
+      confirmLabel: 'Barchasidan chiqish',
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    setLoggingOutAll(true);
+    try {
+      await logoutAll();
+      toast.success('Barcha qurilmalardan muvaffaqiyatli chiqildi');
+      onRequireAuth?.();
+    } catch (err: any) {
+      toast.error(err?.message || 'Chiqishda xatolik yuz berdi');
+    } finally {
+      setLoggingOutAll(false);
+    }
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -424,6 +542,208 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
         </form>
       </Card>
 
+      {/* App Lock Security: PIN-code, Biometrics, Auto-lock & Logout All */}
+      <Card padding="lg">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-white/[0.08]">
+          <div className="flex items-start gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <Lock className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                Xavfsizlik — PIN-kod va biometrik himoya
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Ilovaga kirishda 4 yoki 6 xonali PIN-kod, Android barmoq izi/yuz hamda avtomatik bloklashni sozlang
+              </p>
+            </div>
+          </div>
+          {appLockConfig?.pinEnabled && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              leadingIcon={<Lock className="w-3.5 h-3.5" />}
+              onClick={() => {
+                if (!user?.id) return;
+                lockAppNow(user.id);
+                notifyLockUpdated();
+              }}
+            >
+              Hozir qulflash
+            </Button>
+          )}
+        </div>
+
+        <div className="space-y-3.5">
+          {/* PIN Code Enable / Disable Row */}
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 dark:bg-[#0D1927] border border-slate-200/70 dark:border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <KeyRound className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    PIN-kod himoyasi
+                  </h3>
+                  <Badge tone={appLockConfig?.pinEnabled ? 'emerald' : 'neutral'}>
+                    {appLockConfig?.pinEnabled
+                      ? `Yoqilgan (${appLockConfig.pinLength} xonali)`
+                      : 'Oʻchirilgan'}
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Ketma-ket 5 marta xato kiritilsa ilova vaqtinchalik bloklanadi. PIN shifrlangan holda saqlanadi.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {appLockConfig?.pinEnabled && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPinModalState({ open: true, mode: 'change' })}
+                >
+                  PIN-kodni oʻzgartirish
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant={appLockConfig?.pinEnabled ? 'secondary' : 'primary'}
+                size="sm"
+                onClick={() =>
+                  setPinModalState({
+                    open: true,
+                    mode: appLockConfig?.pinEnabled ? 'disable' : 'create',
+                  })
+                }
+              >
+                {appLockConfig?.pinEnabled ? 'Oʻchirish' : 'PIN-kod oʻrnatish'}
+              </Button>
+            </div>
+          </div>
+
+          {/* Biometric Unlock Row */}
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 dark:bg-[#0D1927] border border-slate-200/70 dark:border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                <Fingerprint className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Biometrik kirish ({biometricCap?.label || 'Barmoq izi / Yuz'})
+                  </h3>
+                  <Badge
+                    tone={
+                      appLockConfig?.biometricEnabled
+                        ? 'emerald'
+                        : biometricCap?.available
+                        ? 'teal'
+                        : 'neutral'
+                    }
+                  >
+                    {appLockConfig?.biometricEnabled
+                      ? 'Yoqilgan'
+                      : biometricCap?.available
+                      ? 'Tayyor'
+                      : 'Android ilovada'}
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {biometricCap?.available
+                    ? 'Android BiometricPrompt orqali tezkor ochish. Biometrik ishlamasa PIN-kod har doim zaxirada qoladi.'
+                    : biometricCap?.reason ||
+                      'Haqiqiy barmoq izi va yuz tanish faqat Android qurilmada ishlaydi.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="shrink-0">
+              <Button
+                type="button"
+                variant={appLockConfig?.biometricEnabled ? 'secondary' : 'outline'}
+                size="sm"
+                loading={biometricToggling}
+                disabled={!biometricCap?.available && !appLockConfig?.biometricEnabled}
+                onClick={handleToggleBiometric}
+              >
+                {appLockConfig?.biometricEnabled ? 'Oʻchirish' : 'Yoqish'}
+              </Button>
+            </div>
+          </div>
+
+          {/* Auto-Lock Timeout Selector */}
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 dark:bg-[#0D1927] border border-slate-200/70 dark:border-white/[0.08] space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/12 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0">
+                <Timer className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Avtomatik bloklash vaqti
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Ilova fonga oʻtganda yoki faolsiz qolganda qancha vaqtdan keyin PIN soʻralishini tanlang
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {AUTO_LOCK_OPTIONS.map((opt) => {
+                const active = (appLockConfig?.autoLockSeconds ?? 0) === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => handleAutoLockChange(opt.value)}
+                    className={[
+                      'min-h-[44px] px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer',
+                      active
+                        ? 'border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 shadow-[0_0_0_1px_rgba(16,185,129,0.2)]'
+                        : 'border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#081220] text-slate-600 dark:text-slate-300 hover:border-emerald-500/40',
+                    ].join(' ')}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Logout All Devices Row */}
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-rose-500/[0.05] dark:bg-rose-500/[0.06] border border-rose-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/12 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <LogOut className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Barcha qurilmalardan chiqish
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Boshqa telefon yoki brauzerlardagi barcha faol sessiyalarni darhol bekor qiladi
+                </p>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              loading={loggingOutAll}
+              leadingIcon={<LogOut className="w-3.5 h-3.5" />}
+              onClick={handleLogoutAllDevices}
+            >
+              Barcha qurilmalardan chiqish
+            </Button>
+          </div>
+        </div>
+      </Card>
+
       {/* Privacy & Android Runtime Permissions */}
       <PrivacyPermissionsSection />
 
@@ -432,7 +752,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
         <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-white/[0.08]">
           <Shield className="w-5 h-5 text-emerald-500" />
           <h2 className="text-base font-bold text-slate-900 dark:text-white">
-            Xavfsizlik va parolni oʻzgartirish
+            Hisob parolini oʻzgartirish
           </h2>
         </div>
 
@@ -518,6 +838,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
           setNotifPromptOpen(false);
         }}
       />
+
+      {user?.id && (
+        <PinSetupModal
+          isOpen={pinModalState.open}
+          mode={pinModalState.mode}
+          userId={user.id}
+          onClose={() => setPinModalState((prev) => ({ ...prev, open: false }))}
+          onComplete={(msg) => {
+            notifyLockUpdated();
+            toast.success(msg);
+          }}
+        />
+      )}
     </div>
   );
 };

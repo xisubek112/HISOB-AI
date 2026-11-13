@@ -118,6 +118,23 @@ class ApiService {
     }
   }
 
+  async logoutAll(): Promise<{ success: boolean; clearedSessions: number }> {
+    try {
+      return await this.request<{ success: boolean; clearedSessions: number }>('/api/auth/logout-all', {
+        method: 'POST',
+      });
+    } finally {
+      this.setToken(null);
+    }
+  }
+
+  async verifyPassword(password: string): Promise<{ valid: boolean }> {
+    return this.request<{ valid: boolean }>('/api/auth/verify-password', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
+  }
+
   async forgotPassword(email: string): Promise<{ message: string }> {
     return this.request<{ message: string }>('/api/auth/forgot-password', {
       method: 'POST',

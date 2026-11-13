@@ -101,6 +101,23 @@ app.post('/api/auth/logout', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+app.post('/api/auth/logout-all', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const clearedSessions = db.logoutAllDevices(req.user!.id);
+  res.json({ success: true, clearedSessions });
+});
+
+app.post('/api/auth/verify-password', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const { password } = req.body || {};
+  if (!password || typeof password !== 'string') {
+    return res.status(400).json({ error: 'Parolni kiriting' });
+  }
+  const valid = db.verifyUserPassword(req.user!.id, password);
+  if (!valid) {
+    return res.status(401).json({ error: 'Parol notoʻgʻri' });
+  }
+  res.json({ valid: true });
+});
+
 app.post('/api/auth/forgot-password', (req: Request, res: Response) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Elektron pochtani kiriting' });

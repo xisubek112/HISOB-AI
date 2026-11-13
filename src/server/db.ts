@@ -817,6 +817,26 @@ class Database {
     this.persist();
   }
 
+  logoutAllDevices(userId: string): number {
+    let cleared = 0;
+    for (const [token, uid] of Object.entries(this.data.sessions)) {
+      if (uid === userId) {
+        delete this.data.sessions[token];
+        cleared += 1;
+      }
+    }
+    if (cleared > 0) {
+      this.persist();
+    }
+    return cleared;
+  }
+
+  verifyUserPassword(userId: string, password: string): boolean {
+    const user = this.data.users[userId];
+    if (!user || !password) return false;
+    return hashPassword(password, user.salt) === user.passwordHash;
+  }
+
   forgotPassword(email: string): string {
     const user = Object.values(this.data.users).find((u) => u.email.toLowerCase() === email.toLowerCase());
     if (!user) {

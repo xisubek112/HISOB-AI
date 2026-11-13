@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext.tsx';
 import { Sidebar, NavTab } from './components/layout/Sidebar.tsx';
 import { Header, DashboardPeriod } from './components/layout/Header.tsx';
@@ -29,7 +29,7 @@ import { CurrenciesView } from './components/views/CurrenciesView.tsx';
 import { BanksView } from './components/views/BanksView.tsx';
 import { TelegramView } from './components/views/TelegramView.tsx';
 
-// Modals
+// Modals & App Lock Security
 import { TransactionModal } from './components/modals/TransactionModal.tsx';
 import { CategoryModal } from './components/modals/CategoryModal.tsx';
 import { BudgetModal } from './components/modals/BudgetModal.tsx';
@@ -39,12 +39,16 @@ import { AuthModal } from './components/modals/AuthModal.tsx';
 import { VoiceTransactionModal } from './components/modals/VoiceTransactionModal.tsx';
 import { PremiumModal } from './components/modals/PremiumModal.tsx';
 import { BiometricLockGate } from './components/modals/BiometricLockGate.tsx';
+import { PinSetupModal } from './components/security/PinSetupModal.tsx';
+import { FirstUsePinModal } from './components/security/FirstUsePinModal.tsx';
 import {
-  checkPermission,
-  getPrivacyControls,
-  isBiometricLockEnabled,
-  isNativeApp,
-} from './services/permissions.ts';
+  clearHiddenTimestamp,
+  evaluateShouldLock,
+  getAppLockConfig,
+  hasSeenFirstUsePinPrompt,
+  markAppHidden,
+  markFirstUsePinPromptSeen,
+} from './services/appLock.ts';
 
 import { ToastProvider, useToast, Drawer } from './design-system/index.ts';
 import {
@@ -68,7 +72,7 @@ import {
 import { api } from './services/api.ts';
 
 function MainApp() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, logout } = useAuth();
   const toast = useToast();
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
@@ -110,22 +114,126 @@ function MainApp() {
 
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [premiumModalOpen, setPremiumModalOpen] = useState(false);
-  const [biometricLocked, setBiometricLocked] = useState(false);
 
+  // App Lock State (PIN & Biometrics)
+  const [appLocked, setAppLocked] = useState(false);
+  const [firstUsePinOpen, setFirstUsePinOpen] = useState(false);
+  const [firstUsePinCreateOpen, setFirstUsePinCreateOpen] = useState(false);
+  const lastActivityRef = useRef<number>(Date.now());
+
+  // Prompt login modal cleanly if session was signed out (e.g. "Barcha qurilmalardan chiqish")
   useEffect(() => {
-    if (!isNativeApp() || !isBiometricLockEnabled() || !getPrivacyControls().biometric) {
+    if (!authLoading && !user) {
+      setAppLocked(false);
+      setFirstUsePinOpen(false);
+      setAuthModalOpen(true);
+    }
+  }, [authLoading, user]);
+
+  // Evaluate PIN lock on app open / user switch, and offer first-use setup once
+  useEffect(() => {
+    if (!user?.id) {
+      setAppLocked(false);
       return;
     }
-    let mounted = true;
-    checkPermission('biometric').then((summary) => {
-      if (mounted && summary.hardwareAvailable && summary.status === 'granted') {
-        setBiometricLocked(true);
+
+    const cfg = getAppLockConfig(user.id);
+    if (cfg.pinEnabled) {
+      const shouldLock = evaluateShouldLock(user.id, { isAppLaunch: true });
+      setAppLocked(shouldLock);
+      setFirstUsePinOpen(false);
+    } else {
+      setAppLocked(false);
+      if (!hasSeenFirstUsePinPrompt(user.id)) {
+        setFirstUsePinOpen(true);
       }
-    });
-    return () => {
-      mounted = false;
+    }
+  }, [user?.id]);
+
+  // Background, visibility, inactivity & settings lock listeners
+  useEffect(() => {
+    if (!user?.id) return;
+    const uid = user.id;
+
+    const bumpActivity = () => {
+      lastActivityRef.current = Date.now();
     };
-  }, []);
+
+    const handleVisibilityChange = () => {
+      const cfg = getAppLockConfig(uid);
+      if (!cfg.pinEnabled) return;
+
+      if (document.hidden) {
+        markAppHidden(uid);
+        if (cfg.autoLockSeconds === 0) {
+          setAppLocked(true);
+        }
+      } else {
+        if (evaluateShouldLock(uid, { lastActivityAt: lastActivityRef.current })) {
+          setAppLocked(true);
+        } else {
+          clearHiddenTimestamp(uid);
+          bumpActivity();
+        }
+      }
+    };
+
+    const handlePageHide = () => {
+      const cfg = getAppLockConfig(uid);
+      if (!cfg.pinEnabled) return;
+      markAppHidden(uid);
+      if (cfg.autoLockSeconds === 0) {
+        setAppLocked(true);
+      }
+    };
+
+    const handleWindowFocus = () => {
+      const cfg = getAppLockConfig(uid);
+      if (!cfg.pinEnabled) return;
+      if (evaluateShouldLock(uid, { lastActivityAt: lastActivityRef.current })) {
+        setAppLocked(true);
+      } else {
+        clearHiddenTimestamp(uid);
+        bumpActivity();
+      }
+    };
+
+    const handleLockUpdated = () => {
+      const cfg = getAppLockConfig(uid);
+      if (!cfg.pinEnabled) {
+        setAppLocked(false);
+      } else if (cfg.isLocked) {
+        setAppLocked(true);
+      }
+    };
+
+    const idleInterval = window.setInterval(() => {
+      const cfg = getAppLockConfig(uid);
+      if (!cfg.pinEnabled || cfg.autoLockSeconds === 0) return;
+      if (evaluateShouldLock(uid, { lastActivityAt: lastActivityRef.current })) {
+        setAppLocked(true);
+      }
+    }, 5000);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('pointerdown', bumpActivity, { passive: true });
+    window.addEventListener('keydown', bumpActivity, { passive: true });
+    window.addEventListener('touchstart', bumpActivity, { passive: true });
+    window.addEventListener('hisobot:applock-changed', handleLockUpdated);
+
+    return () => {
+      window.clearInterval(idleInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('pointerdown', bumpActivity);
+      window.removeEventListener('keydown', bumpActivity);
+      window.removeEventListener('touchstart', bumpActivity);
+      window.removeEventListener('hisobot:applock-changed', handleLockUpdated);
+    };
+  }, [user?.id]);
 
   // Central Data Fetcher
   const refreshAllData = useCallback(async () => {
@@ -495,7 +603,10 @@ function MainApp() {
             )}
 
             {currentTab === 'settings' && (
-              <SettingsView onOpenPremiumModal={() => setPremiumModalOpen(true)} />
+              <SettingsView
+                onOpenPremiumModal={() => setPremiumModalOpen(true)}
+                onRequireAuth={() => setAuthModalOpen(true)}
+              />
             )}
           </div>
         </main>
@@ -716,12 +827,47 @@ function MainApp() {
         onClose={() => setPremiumModalOpen(false)}
       />
 
-      {biometricLocked && (
+      {user?.id && (
+        <>
+          <FirstUsePinModal
+            isOpen={firstUsePinOpen && !appLocked}
+            onSetupNow={() => {
+              markFirstUsePinPromptSeen(user.id);
+              setFirstUsePinOpen(false);
+              setFirstUsePinCreateOpen(true);
+            }}
+            onDismiss={() => {
+              markFirstUsePinPromptSeen(user.id);
+              setFirstUsePinOpen(false);
+            }}
+          />
+
+          <PinSetupModal
+            isOpen={firstUsePinCreateOpen}
+            mode="create"
+            userId={user.id}
+            onClose={() => setFirstUsePinCreateOpen(false)}
+            onComplete={(msg) => {
+              window.dispatchEvent(new CustomEvent('hisobot:applock-changed'));
+              toast.success(msg);
+            }}
+          />
+        </>
+      )}
+
+      {appLocked && user && (
         <BiometricLockGate
-          userName={user?.fullName}
-          onUnlock={() => setBiometricLocked(false)}
-          onUsePassword={() => {
-            setBiometricLocked(false);
+          userId={user.id}
+          userName={user.fullName}
+          userEmail={user.email}
+          onUnlock={() => {
+            lastActivityRef.current = Date.now();
+            setAppLocked(false);
+          }}
+          onSetupNewPin={() => setFirstUsePinCreateOpen(true)}
+          onSignOut={async () => {
+            setAppLocked(false);
+            await logout();
             setAuthModalOpen(true);
           }}
         />

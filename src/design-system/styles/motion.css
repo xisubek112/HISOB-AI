@@ -106,6 +106,38 @@
   font-feature-settings: "tnum" 1, "cv05" 1;
 }
 
+@keyframes hai-shake {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  15%, 45%, 75% {
+    transform: translate3d(-9px, 0, 0);
+  }
+  30%, 60%, 90% {
+    transform: translate3d(9px, 0, 0);
+  }
+}
+
+@keyframes hai-pin-pop {
+  0% {
+    transform: scale(0.72);
+  }
+  60% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.hai-shake {
+  animation: hai-shake 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.hai-pin-pop {
+  animation: hai-pin-pop 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 .pb-safe {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
