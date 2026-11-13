@@ -41,8 +41,8 @@ jobs:
       - name: Build web app
         run: npm run build
 
-      - name: Add Android platform
-        run: npx cap add android
+      - name: Ensure Android platform exists
+        run: '[ -d android ] || npx cap add android'
 
       - name: Generate app icon and splash screen
         run: npx @capacitor/assets generate --android --iconBackgroundColor '#09091b' --splashBackgroundColor '#09091b'

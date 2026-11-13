@@ -28,6 +28,18 @@ import {
   Select,
   useToast,
 } from '../../design-system/index.ts';
+import { PrivacyPermissionsSection } from '../settings/PrivacyPermissionsSection.tsx';
+import { PermissionPromptModal } from '../modals/PermissionPromptModal.tsx';
+import {
+  AppPermissionStatus,
+  checkPermission,
+  getPrivacyControls,
+  markNotificationPromptDismissed,
+  requestPermission,
+  scheduleLocalReminder,
+  setPrivacyControl,
+  wasNotificationPromptDismissed,
+} from '../../services/permissions.ts';
 
 interface SettingsViewProps {
   onOpenPremiumModal?: () => void;
@@ -60,6 +72,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
   const [changingPass, setChangingPass] = useState(false);
   const [profileNotice, setProfileNotice] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [passNotice, setPassNotice] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [notifPromptOpen, setNotifPromptOpen] = useState(false);
+  const [notifStatus, setNotifStatus] = useState<AppPermissionStatus>('prompt');
 
   useEffect(() => {
     if (!user) return;
@@ -384,7 +398,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
                   <input
                     type="checkbox"
                     checked={item.checked}
-                    onChange={(e) => item.onChange(e.target.checked)}
+                    onChange={async (e) => {
+                      const nextVal = e.target.checked;
+                      item.onChange(nextVal);
+                      if (nextVal && !wasNotificationPromptDismissed()) {
+                        const summary = await checkPermission('notifications');
+                        if (summary.status !== 'granted' && summary.status !== 'unavailable') {
+                          setNotifStatus(summary.status);
+                          setNotifPromptOpen(true);
+                        }
+                      }
+                    }}
                     className="w-4 h-4 rounded accent-emerald-500 shrink-0 cursor-pointer"
                   />
                 </label>
@@ -399,6 +423,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
           </div>
         </form>
       </Card>
+
+      {/* Privacy & Android Runtime Permissions */}
+      <PrivacyPermissionsSection />
 
       {/* Security & Password Change */}
       <Card padding="lg">
@@ -461,6 +488,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPremiumModal }
           </div>
         </form>
       </Card>
+
+      <PermissionPromptModal
+        isOpen={notifPromptOpen}
+        permissionKey="notifications"
+        status={notifStatus}
+        featureDisabled={!getPrivacyControls().notifications}
+        onEnableInPrivacy={() => {
+          setPrivacyControl('notifications', true);
+          setNotifPromptOpen(false);
+        }}
+        onAllow={async () => {
+          const res = await requestPermission('notifications');
+          setNotifStatus(res.status);
+          if (res.status === 'granted') {
+            setNotifPromptOpen(false);
+            toast.success('Bildirishnomalar yoqildi');
+            await scheduleLocalReminder({
+              id: 1001,
+              title: 'HISOBOT AI eslatmalari faollashdi',
+              body: 'Budjet limiti va qarz muddatlari boʻyicha ogohlantirishlar yoqildi.',
+            });
+          } else {
+            markNotificationPromptDismissed();
+          }
+        }}
+        onDismiss={() => {
+          markNotificationPromptDismissed();
+          setNotifPromptOpen(false);
+        }}
+      />
     </div>
   );
 };

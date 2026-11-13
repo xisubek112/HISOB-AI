@@ -13,11 +13,21 @@ import {
   Globe,
   ArrowDownLeft,
   ArrowUpRight,
+  Settings,
 } from 'lucide-react';
 import { AIParsedTransaction, Category, Transaction } from '../../types/finance.ts';
 import { formatMoney, formatDateUz, PAYMENT_METHODS_MAP } from '../../utils/formatters.ts';
 import { api } from '../../services/api.ts';
 import { Modal, Button } from '../../design-system/index.ts';
+import { PermissionPromptModal } from './PermissionPromptModal.tsx';
+import {
+  AppPermissionStatus,
+  checkPermission,
+  getPrivacyControls,
+  openAppSettings,
+  requestPermission,
+  setPrivacyControl,
+} from '../../services/permissions.ts';
 
 interface VoiceTransactionModalProps {
   isOpen: boolean;
@@ -38,6 +48,9 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
   const [parsedTx, setParsedTx] = useState<AIParsedTransaction | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [micPromptOpen, setMicPromptOpen] = useState(false);
+  const [micStatus, setMicStatus] = useState<AppPermissionStatus>('prompt');
+  const [micFeatureDisabled, setMicFeatureDisabled] = useState(false);
 
   const recognitionRef = useRef<any>(null);
 
@@ -47,8 +60,39 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
       setTranscript('');
       setParsedTx(null);
       setError('');
+      setMicPromptOpen(false);
     }
   }, [isOpen]);
+
+  const handleMicPress = async () => {
+    if (isRecording) {
+      stopRecording();
+      return;
+    }
+
+    const controls = getPrivacyControls();
+    if (!controls.microphone) {
+      setMicFeatureDisabled(true);
+      setMicStatus('denied');
+      setMicPromptOpen(true);
+      return;
+    }
+    setMicFeatureDisabled(false);
+
+    const summary = await checkPermission('microphone');
+    setMicStatus(summary.status);
+    if (summary.status === 'granted') {
+      startRecording();
+      return;
+    }
+    if (summary.status === 'unavailable') {
+      setError(
+        'Bu qurilmada mikrofon aniqlanmadi. Matnni qoʻlda yozishingiz yoki tezkor namunalardan foydalanishingiz mumkin.'
+      );
+      return;
+    }
+    setMicPromptOpen(true);
+  };
 
   const startRecording = () => {
     setError('');
@@ -199,9 +243,21 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
         </div>
 
         {error && (
-          <div className="p-3 text-xs bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-300 rounded-xl flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+          <div className="p-3 text-xs bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-300 rounded-xl flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+            {micStatus === 'permanently_denied' && (
+              <button
+                type="button"
+                onClick={() => openAppSettings()}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 text-white font-semibold shrink-0 cursor-pointer"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span>Sozlamalar</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -210,7 +266,7 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
           <button
             type="button"
             aria-label={isRecording ? 'Ovoz yozishni toʻxtatish' : 'Ovoz yozishni boshlash'}
-            onClick={isRecording ? stopRecording : startRecording}
+            onClick={handleMicPress}
             className={`w-20 h-20 rounded-full flex items-center justify-center transition-all cursor-pointer ${
               isRecording
                 ? 'bg-rose-600 text-white ring-8 ring-rose-500/25 shadow-[0_0_28px_rgba(239,68,68,0.45)]'
@@ -331,6 +387,34 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
           </div>
         )}
       </div>
+
+      <PermissionPromptModal
+        isOpen={micPromptOpen}
+        permissionKey="microphone"
+        status={micStatus}
+        featureDisabled={micFeatureDisabled}
+        onEnableInPrivacy={() => {
+          setPrivacyControl('microphone', true);
+          setMicFeatureDisabled(false);
+          setMicPromptOpen(false);
+          handleMicPress();
+        }}
+        onAllow={async () => {
+          const res = await requestPermission('microphone');
+          setMicStatus(res.status);
+          if (res.status === 'granted') {
+            setMicPromptOpen(false);
+            startRecording();
+          } else {
+            setError(
+              res.status === 'permanently_denied'
+                ? 'Mikrofon ruxsati bloklangan. Sozlamalardan yoqing yoki matn kiriting.'
+                : 'Mikrofon ruxsati berilmadi. Quyiga matn yozishingiz mumkin.'
+            );
+          }
+        }}
+        onDismiss={() => setMicPromptOpen(false)}
+      />
     </Modal>
   );
 };

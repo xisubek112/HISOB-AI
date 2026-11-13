@@ -27,6 +27,17 @@ import {
   Skeleton,
   useToast,
 } from '../../design-system/index.ts';
+import { PermissionPromptModal } from '../modals/PermissionPromptModal.tsx';
+import {
+  AppPermissionStatus,
+  captureReceiptWithCamera,
+  checkPermission,
+  getPrivacyControls,
+  isNativeApp,
+  pickReceiptFromPhotos,
+  requestPermission,
+  setPrivacyControl,
+} from '../../services/permissions.ts';
 
 export const ReceiptScannerView: React.FC<{ onTransactionSaved?: () => void }> = ({
   onTransactionSaved,
@@ -41,6 +52,9 @@ export const ReceiptScannerView: React.FC<{ onTransactionSaved?: () => void }> =
   const [scanning, setScanning] = useState(false);
   const [parsedResult, setParsedResult] = useState<Omit<ScannedReceipt, 'id' | 'userId' | 'createdAt'> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [cameraPromptOpen, setCameraPromptOpen] = useState(false);
+  const [cameraStatus, setCameraStatus] = useState<AppPermissionStatus>('prompt');
+  const [cameraFeatureDisabled, setCameraFeatureDisabled] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadReceipts = useCallback(async () => {
@@ -95,6 +109,63 @@ export const ReceiptScannerView: React.FC<{ onTransactionSaved?: () => void }> =
     } finally {
       setScanning(false);
     }
+  };
+
+  const launchCameraCapture = async () => {
+    try {
+      const { dataUrl } = await captureReceiptWithCamera();
+      setImagePreviewError(false);
+      setSelectedImage(dataUrl);
+      await triggerScan(dataUrl);
+    } catch (err: any) {
+      const msg = err?.message || '';
+      if (!msg.toLowerCase().includes('cancel')) {
+        toast.error(msg || 'Kameradan surat olib boʻlmadi');
+      }
+    }
+  };
+
+  const handleTakePhotoClick = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const controls = getPrivacyControls();
+    if (!controls.camera) {
+      setCameraFeatureDisabled(true);
+      setCameraStatus('denied');
+      setCameraPromptOpen(true);
+      return;
+    }
+    setCameraFeatureDisabled(false);
+
+    const summary = await checkPermission('camera');
+    if (summary.status === 'granted') {
+      await launchCameraCapture();
+      return;
+    }
+
+    setCameraStatus(summary.status);
+    setCameraPromptOpen(true);
+  };
+
+  const handlePickFromGalleryClick = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const controls = getPrivacyControls();
+    if (!controls.photos) {
+      toast.info('Galereyadan tanlash Maxfiylik sozlamalarida oʻchirilgan');
+      return;
+    }
+    if (isNativeApp()) {
+      try {
+        const { dataUrl } = await pickReceiptFromPhotos();
+        setImagePreviewError(false);
+        setSelectedImage(dataUrl);
+        await triggerScan(dataUrl);
+        return;
+      } catch (err: any) {
+        const msg = err?.message || '';
+        if (msg.toLowerCase().includes('cancel')) return;
+      }
+    }
+    fileInputRef.current?.click();
   };
 
   const loadSampleReceipt = () => {
@@ -241,9 +312,23 @@ Fiskal belgi: 8943180921`;
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs leading-relaxed">
                   JPG, PNG formatidagi kassa cheklari va xarid kvitansiyalari
                 </p>
-                <div className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-[#0D1927] border border-slate-200 dark:border-white/[0.08] text-xs font-semibold text-slate-700 dark:text-slate-200">
-                  <Upload className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Faylni tanlash</span>
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleTakePhotoClick}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-bold shadow-[0_6px_18px_rgba(16,185,129,0.28)] hover:bg-emerald-400 transition-colors cursor-pointer"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Suratga olish</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePickFromGalleryClick}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-[#0D1927] border border-slate-200 dark:border-white/[0.08] text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-cyan-500/40 transition-colors cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Galereya / Fayl</span>
+                  </button>
                 </div>
               </>
             )}
@@ -455,6 +540,27 @@ Fiskal belgi: 8943180921`;
           </div>
         )}
       </Card>
+      <PermissionPromptModal
+        isOpen={cameraPromptOpen}
+        permissionKey="camera"
+        status={cameraStatus}
+        featureDisabled={cameraFeatureDisabled}
+        onEnableInPrivacy={() => {
+          setPrivacyControl('camera', true);
+          setCameraFeatureDisabled(false);
+          setCameraPromptOpen(false);
+          handleTakePhotoClick();
+        }}
+        onAllow={async () => {
+          const res = await requestPermission('camera');
+          setCameraStatus(res.status);
+          if (res.status === 'granted') {
+            setCameraPromptOpen(false);
+            await launchCameraCapture();
+          }
+        }}
+        onDismiss={() => setCameraPromptOpen(false)}
+      />
     </div>
   );
 };

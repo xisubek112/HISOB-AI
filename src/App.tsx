@@ -38,6 +38,13 @@ import { DebtModal, DebtPayModal } from './components/modals/DebtModal.tsx';
 import { AuthModal } from './components/modals/AuthModal.tsx';
 import { VoiceTransactionModal } from './components/modals/VoiceTransactionModal.tsx';
 import { PremiumModal } from './components/modals/PremiumModal.tsx';
+import { BiometricLockGate } from './components/modals/BiometricLockGate.tsx';
+import {
+  checkPermission,
+  getPrivacyControls,
+  isBiometricLockEnabled,
+  isNativeApp,
+} from './services/permissions.ts';
 
 import { ToastProvider, useToast, Drawer } from './design-system/index.ts';
 import {
@@ -103,6 +110,22 @@ function MainApp() {
 
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [premiumModalOpen, setPremiumModalOpen] = useState(false);
+  const [biometricLocked, setBiometricLocked] = useState(false);
+
+  useEffect(() => {
+    if (!isNativeApp() || !isBiometricLockEnabled() || !getPrivacyControls().biometric) {
+      return;
+    }
+    let mounted = true;
+    checkPermission('biometric').then((summary) => {
+      if (mounted && summary.hardwareAvailable && summary.status === 'granted') {
+        setBiometricLocked(true);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Central Data Fetcher
   const refreshAllData = useCallback(async () => {
@@ -692,6 +715,17 @@ function MainApp() {
         isOpen={premiumModalOpen}
         onClose={() => setPremiumModalOpen(false)}
       />
+
+      {biometricLocked && (
+        <BiometricLockGate
+          userName={user?.fullName}
+          onUnlock={() => setBiometricLocked(false)}
+          onUsePassword={() => {
+            setBiometricLocked(false);
+            setAuthModalOpen(true);
+          }}
+        />
+      )}
     </div>
   );
 }

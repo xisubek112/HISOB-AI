@@ -1,0 +1,9 @@
+{
+	"appId": "uz.hisobotai.app",
+	"appName": "HISOBOT AI",
+	"webDir": "dist",
+	"server": {
+		"url": "https://hisob-ai-3nz6.onrender.com",
+		"cleartext": false
+	}
+}

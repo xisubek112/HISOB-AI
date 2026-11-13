@@ -4,10 +4,19 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Plus, AlertCircle } from 'lucide-react';
+import { Plus, AlertCircle, MapPin, X } from 'lucide-react';
 import { Category, PaymentMethod, Transaction, TransactionType } from '../../types/finance.ts';
 import { getTodayDateString, getCurrentTimeString } from '../../utils/formatters.ts';
 import { Modal, Button, Input, Select } from '../../design-system/index.ts';
+import { PermissionPromptModal } from './PermissionPromptModal.tsx';
+import {
+  AppPermissionStatus,
+  checkPermission,
+  getApproximateLocationTag,
+  getPrivacyControls,
+  requestPermission,
+  setPrivacyControl,
+} from '../../services/permissions.ts';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -37,11 +46,17 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [description, setDescription] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [notes, setNotes] = useState<string>('');
+  const [locationTag, setLocationTag] = useState<string>('');
+  const [locating, setLocating] = useState<boolean>(false);
+  const [locPromptOpen, setLocPromptOpen] = useState<boolean>(false);
+  const [locStatus, setLocStatus] = useState<AppPermissionStatus>('prompt');
+  const [locFeatureDisabled, setLocFeatureDisabled] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
     setError('');
+    setLocationTag('');
     if (editingTransaction) {
       setType(editingTransaction.type);
       setAmount(
@@ -96,6 +111,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
     try {
       setLoading(true);
+      const combinedNotes = [notes.trim(), locationTag].filter(Boolean).join(' · ');
       await onSave({
         type,
         amount: parsedAmount,
@@ -105,7 +121,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         time,
         description: description.trim() || categoryName,
         paymentMethod,
-        notes: notes.trim(),
+        notes: combinedNotes,
       });
       onClose();
     } catch (err: any) {
@@ -113,6 +129,38 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchApproxLocation = async () => {
+    setLocating(true);
+    setError('');
+    try {
+      const loc = await getApproximateLocationTag();
+      setLocationTag(loc.label);
+    } catch (err: any) {
+      setError(err?.message || 'Joylashuvni aniqlab boʻlmadi');
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  const handleAttachLocationClick = async () => {
+    const controls = getPrivacyControls();
+    if (!controls.location) {
+      setLocFeatureDisabled(true);
+      setLocStatus('denied');
+      setLocPromptOpen(true);
+      return;
+    }
+    setLocFeatureDisabled(false);
+
+    const summary = await checkPermission('location');
+    if (summary.status === 'granted') {
+      await fetchApproxLocation();
+      return;
+    }
+    setLocStatus(summary.status);
+    setLocPromptOpen(true);
   };
 
   return (
@@ -282,9 +330,20 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-            Qoʻshimcha izoh (ixtiyoriy)
-          </label>
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Qoʻshimcha izoh (ixtiyoriy)
+            </label>
+            <button
+              type="button"
+              disabled={locating}
+              onClick={handleAttachLocationClick}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline disabled:opacity-50 cursor-pointer"
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              <span>{locating ? 'Aniqlanmoqda...' : 'Taxminiy hududni biriktirish'}</span>
+            </button>
+          </div>
           <textarea
             rows={2}
             placeholder="Qoʻshimcha tafsilotlar..."
@@ -292,6 +351,20 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             onChange={(e) => setNotes(e.target.value)}
             className="w-full px-3.5 py-2.5 bg-[#F8FAFC] dark:bg-[#0D1927] border border-slate-200 dark:border-white/[0.12] rounded-xl text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"
           />
+          {locationTag && (
+            <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] text-emerald-700 dark:text-emerald-300">
+              <MapPin className="w-3 h-3 shrink-0" />
+              <span>{locationTag}</span>
+              <button
+                type="button"
+                aria-label="Hududni olib tashlash"
+                onClick={() => setLocationTag('')}
+                className="ml-1 hover:text-rose-500 cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="pt-3 border-t border-slate-100 dark:border-white/[0.08] flex items-center justify-end gap-2.5">
@@ -307,6 +380,28 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           </Button>
         </div>
       </form>
+
+      <PermissionPromptModal
+        isOpen={locPromptOpen}
+        permissionKey="location"
+        status={locStatus}
+        featureDisabled={locFeatureDisabled}
+        onEnableInPrivacy={() => {
+          setPrivacyControl('location', true);
+          setLocFeatureDisabled(false);
+          setLocPromptOpen(false);
+          handleAttachLocationClick();
+        }}
+        onAllow={async () => {
+          const res = await requestPermission('location');
+          setLocStatus(res.status);
+          if (res.status === 'granted') {
+            setLocPromptOpen(false);
+            await fetchApproxLocation();
+          }
+        }}
+        onDismiss={() => setLocPromptOpen(false)}
+      />
     </Modal>
   );
 };

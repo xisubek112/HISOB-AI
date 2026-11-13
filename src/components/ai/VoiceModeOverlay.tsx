@@ -1,8 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Mic, MicOff, Pause, Play, X, Send, AlertCircle } from 'lucide-react';
+import { Mic, MicOff, Pause, Play, X, Send, AlertCircle, Settings } from 'lucide-react';
 import { RobotMascot } from './RobotMascot.tsx';
 import { VoiceWaveform } from './VoiceWaveform.tsx';
 import { RobotState } from './types.ts';
+import { PermissionPromptModal } from '../modals/PermissionPromptModal.tsx';
+import {
+  AppPermissionStatus,
+  checkPermission,
+  getPrivacyControls,
+  openAppSettings,
+  requestPermission,
+  setPrivacyControl,
+} from '../../services/permissions.ts';
 
 interface VoiceModeOverlayProps {
   isOpen: boolean;
@@ -21,6 +30,9 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
   const [transcript, setTranscript] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [lang, setLang] = useState<'uz-UZ' | 'ru-RU' | 'en-US'>('uz-UZ');
+  const [micStatus, setMicStatus] = useState<AppPermissionStatus>('prompt');
+  const [micPromptOpen, setMicPromptOpen] = useState(false);
+  const [micFeatureDisabled, setMicFeatureDisabled] = useState(false);
 
   const recognitionRef = useRef<any>(null);
 
@@ -89,6 +101,39 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
     [stopRecognition]
   );
 
+  const ensureMicAndStart = useCallback(
+    async (targetLang: 'uz-UZ' | 'ru-RU' | 'en-US') => {
+      const controls = getPrivacyControls();
+      if (!controls.microphone) {
+        setMicFeatureDisabled(true);
+        setMicStatus('denied');
+        setMicPromptOpen(true);
+        setRobotState('idle');
+        return;
+      }
+      setMicFeatureDisabled(false);
+
+      const summary = await checkPermission('microphone');
+      setMicStatus(summary.status);
+      if (summary.status === 'granted') {
+        startRecognition(targetLang);
+        return;
+      }
+
+      if (summary.status === 'unavailable') {
+        setRobotState('error');
+        setErrorMsg(
+          'Bu qurilma yoki brauzerda mikrofon aniqlanmadi. Quyiga matn yozib yuborishingiz mumkin.'
+        );
+        return;
+      }
+
+      setRobotState('idle');
+      setMicPromptOpen(true);
+    },
+    [startRecognition]
+  );
+
   useEffect(() => {
     if (!isOpen) {
       stopRecognition();
@@ -97,6 +142,7 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
       setTranscript('');
       setErrorMsg('');
       setIsPaused(false);
+      setMicPromptOpen(false);
       return;
     }
 
@@ -104,13 +150,13 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onEsc);
-    startRecognition(lang);
+    ensureMicAndStart(lang);
 
     return () => {
       window.removeEventListener('keydown', onEsc);
       stopRecognition();
     };
-  }, [isOpen, lang, onClose, startRecognition, stopRecognition]);
+  }, [isOpen, lang, onClose, ensureMicAndStart, stopRecognition]);
 
   useEffect(() => {
     if (!isOpen || robotState !== 'listening' || isPaused) return;
@@ -131,7 +177,7 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
   const handleTogglePause = () => {
     if (isPaused) {
       setIsPaused(false);
-      startRecognition(lang);
+      ensureMicAndStart(lang);
     } else {
       setIsPaused(true);
       stopRecognition();
@@ -209,9 +255,21 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
         />
 
         {errorMsg && (
-          <div className="w-full p-3 rounded-xl bg-rose-500/15 border border-rose-500/35 text-rose-200 text-xs flex items-center gap-2 text-left">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-            <span>{errorMsg}</span>
+          <div className="w-full p-3 rounded-xl bg-rose-500/15 border border-rose-500/35 text-rose-200 text-xs flex flex-wrap items-center justify-between gap-2 text-left">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+              <span>{errorMsg}</span>
+            </div>
+            {micStatus === 'permanently_denied' && (
+              <button
+                type="button"
+                onClick={() => openAppSettings()}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-white font-semibold shrink-0 cursor-pointer"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span>Sozlamalar</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -247,7 +305,7 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
                   setIsPaused(true);
                   setRobotState('idle');
                 }
-              : () => startRecognition(lang)
+              : () => ensureMicAndStart(lang)
           }
           aria-label={robotState === 'listening' ? 'Tinglashni toʻxtatish' : 'Tinglashni boshlash'}
           className={`w-16 h-16 rounded-full flex items-center justify-center transition-all cursor-pointer ${
@@ -278,6 +336,38 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
           </button>
         )}
       </div>
+
+      <PermissionPromptModal
+        isOpen={micPromptOpen}
+        permissionKey="microphone"
+        status={micStatus}
+        featureDisabled={micFeatureDisabled}
+        onEnableInPrivacy={() => {
+          setPrivacyControl('microphone', true);
+          setMicFeatureDisabled(false);
+          setMicPromptOpen(false);
+          ensureMicAndStart(lang);
+        }}
+        onAllow={async () => {
+          const res = await requestPermission('microphone');
+          setMicStatus(res.status);
+          if (res.status === 'granted') {
+            setMicPromptOpen(false);
+            startRecognition(lang);
+          } else if (res.status === 'denied' || res.status === 'permanently_denied') {
+            setErrorMsg(
+              res.status === 'permanently_denied'
+                ? 'Mikrofon ruxsati tizimda bloklangan. Quyida matn yozishingiz yoki Sozlamalardan yoqishingiz mumkin.'
+                : 'Mikrofon ruxsati berilmadi. Quyida matn yozib yuborishingiz mumkin.'
+            );
+            setRobotState('error');
+          }
+        }}
+        onDismiss={() => {
+          setMicPromptOpen(false);
+          setRobotState('idle');
+        }}
+      />
     </div>
   );
 };
