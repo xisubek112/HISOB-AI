@@ -152,3 +152,22 @@ The recurring RPC also validates supported frequencies and required category and
 payment-method fields before creating a transaction. Generated transaction and
 log record IDs are derived from a digest of the user and execution ID, avoiding
 unsafe direct use of caller-provided text as a record key.
+
+
+## Rollback-safe atomic operation checks
+
+A manual SQL integration check is provided at
+`supabase/tests/atomic_operations.sql`. It creates a uniquely named temporary
+user and fixture records inside one transaction, then checks:
+
+- wallet transfer balances, idempotent retry, and insufficient-funds rollback;
+- goal deposit and debt payment idempotency;
+- recurring expense wallet debit, transaction creation, and schedule advancement.
+
+Run this script only in a disposable, non-production Supabase project after
+applying migrations 001-004 in order. Execute the complete file in the SQL
+Editor or with a PostgreSQL client in one session. It ends with `ROLLBACK`, so
+its fixture rows and test writes are not retained. A successful run emits a
+`HISOBOT AI atomic-operation tests passed` notice. These checks are not run by
+GitHub CI because CI has no database connection; a green CI run validates the
+TypeScript build and migration utility self-tests, not the SQL RPCs.
