@@ -33,3 +33,33 @@ Before production activation:
 
 No production data is copied or deleted by this adapter. No runtime behavior is
 changed by this commit.
+
+
+## Legacy JSON import utility
+
+A one-time importer is available at `scripts/migrate-json-to-supabase.ts`.
+It is deliberately separate from application startup and never runs automatically.
+
+1. Make a private backup of the existing `data/database.json` file.
+2. Place a copy of that JSON file in a trusted local working environment; do not commit it.
+3. Set `HISOBOT_JSON_PATH` to that copy if it is not at `data/database.json`.
+4. Run a dry-run first (no credentials and no writes):
+
+   ```sh
+   npx tsx scripts/migrate-json-to-supabase.ts
+   ```
+
+5. Review the counts and investigate any validation error before proceeding.
+6. Only in a controlled staging environment, set `SUPABASE_URL` and
+   `SUPABASE_SERVICE_ROLE_KEY` as private environment variables, then explicitly
+   run:
+
+   ```sh
+   npx tsx scripts/migrate-json-to-supabase.ts --apply --confirm-hisobot-import
+   ```
+
+The importer hashes legacy session tokens before storing them, skips the known
+demo token, maps family records to their owning user, uses conflict-safe upserts,
+and never modifies or deletes the source JSON file. Do not run it against
+production until the async application repository and staging verification are
+complete. The service-role key must never be pasted into chat or committed.
