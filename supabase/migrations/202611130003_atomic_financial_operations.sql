@@ -43,7 +43,7 @@ begin
      or p_target_record_id is null or length(trim(p_target_record_id)) = 0 then
     raise exception 'Operation identifiers are required' using errcode = '22023';
   end if;
-  if p_operation_type not in ('goal_deposit', 'debt_payment') then
+  if p_operation_type is null or p_operation_type not in ('goal_deposit', 'debt_payment') then
     raise exception 'Unsupported financial operation' using errcode = '22023';
   end if;
   if p_amount is null or p_amount <= 0 or p_amount <> round(p_amount) then
@@ -79,6 +79,21 @@ begin
 
   if v_record.owner_user_id is null then
     raise exception 'Financial record was not found' using errcode = 'P0002';
+  end if;
+
+  -- Recheck after locking the target row so concurrent retries cannot apply
+  -- the same deposit/payment twice.
+  select * into v_existing
+  from public.app_operations
+  where owner_user_id = p_user_id and operation_id = p_operation_id;
+
+  if found then
+    if v_existing.operation_type <> p_operation_type
+       or v_existing.target_record_id <> p_target_record_id
+       or v_existing.amount <> p_amount then
+      raise exception 'Operation id was already used for a different request' using errcode = '23505';
+    end if;
+    return v_existing.result;
   end if;
 
   v_payload := v_record.payload;
