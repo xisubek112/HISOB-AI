@@ -94,26 +94,67 @@ function buildSessionRows(sessions: JsonRecord): JsonRecord[] {
 
 function buildDataRows(data: JsonRecord): JsonRecord[] {
   const rows: JsonRecord[] = [];
+  const familyGroups = data.familyGroups ?? {};
+  assertObject(familyGroups, 'familyGroups');
+  const familyOwners = new Map<string, string>();
+
+  for (const [familyId, rawGroup] of Object.entries(familyGroups)) {
+    assertObject(rawGroup, `familyGroups.${familyId}`);
+    const ownerId = typeof rawGroup.ownerId === 'string' ? rawGroup.ownerId : '';
+    if (!ownerId) throw new Error(`Family group ${familyId} has no ownerId; import stopped`);
+    familyOwners.set(familyId, ownerId);
+  }
+
   for (const collection of COLLECTIONS) {
     const source = data[collection] ?? {};
     assertObject(source, collection);
     for (const [scopeKey, value] of Object.entries(source)) {
-      if (collection === 'familyGroups' || collection === 'telegramConnections') {
-        if (value == null) continue;
+      if (value == null) continue;
+
+      if (collection === 'familyGroups') {
+        const group = value as JsonRecord;
+        const ownerId = familyOwners.get(scopeKey);
+        if (!ownerId) throw new Error(`Family group owner missing for ${scopeKey}`);
         rows.push({
-          owner_user_id: collection === 'familyGroups'
-            ? String((value as JsonRecord).ownerId || (value as JsonRecord).createdBy || scopeKey)
-            : scopeKey,
+          owner_user_id: ownerId,
           collection,
           scope_key: scopeKey,
-          record_key: collection === 'familyGroups' ? scopeKey : scopeKey,
+          record_key: scopeKey,
           payload: value,
         });
         continue;
       }
-      if (!Array.isArray(value)) {
-        throw new Error(`Expected ${collection}.${scopeKey} to be an array`);
+
+      if (collection === 'familyMembers' || collection === 'familyInvitations') {
+        if (!Array.isArray(value)) throw new Error(`Expected ${collection}.${scopeKey} to be an array`);
+        const ownerId = familyOwners.get(scopeKey);
+        if (!ownerId) throw new Error(`Cannot map ${collection} family ${scopeKey} to its owner; import stopped`);
+        for (const item of value) {
+          assertObject(item, `${collection}.${scopeKey}[]`);
+          if (typeof item.id !== 'string' || !item.id) throw new Error(`Missing id in ${collection}.${scopeKey}`);
+          rows.push({
+            owner_user_id: ownerId,
+            collection,
+            scope_key: scopeKey,
+            record_key: item.id,
+            payload: item,
+          });
+        }
+        continue;
       }
+
+      if (collection === 'telegramConnections') {
+        rows.push({
+          owner_user_id: scopeKey,
+          collection,
+          scope_key: scopeKey,
+          record_key: scopeKey,
+          payload: value,
+        });
+        continue;
+      }
+
+      if (!Array.isArray(value)) throw new Error(`Expected ${collection}.${scopeKey} to be an array`);
       for (const item of value) {
         assertObject(item, `${collection}.${scopeKey}[]`);
         const recordKey = typeof item.id === 'string' && item.id ? item.id : null;
