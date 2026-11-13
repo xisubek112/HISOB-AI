@@ -27,7 +27,7 @@ import type {
 } from '../types/finance.ts';
 import { getTodayDateString } from '../utils/formatters.ts';
 
-export const GEMINI_MODEL = 'gemini-4-hydrogen';
+export const GEMINI_MODEL = 'gemini-3.8-flash';
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
