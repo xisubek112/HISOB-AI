@@ -53,6 +53,12 @@ begin
     and record_key = p_transfer_id;
 
   if found then
+    if v_transfer->>'fromWalletId' <> p_from_wallet_id
+       or v_transfer->>'toWalletId' <> p_to_wallet_id
+       or (v_transfer->>'amount')::numeric <> p_amount
+       or (v_transfer->>'targetAmount')::numeric <> p_target_amount then
+      raise exception 'Transfer id was already used for a different operation' using errcode = '23505';
+    end if;
     return v_transfer;
   end if;
 
@@ -65,6 +71,25 @@ begin
     and record_key in (p_from_wallet_id, p_to_wallet_id)
   order by record_key
   for update;
+
+  -- Recheck idempotency after acquiring wallet locks. This closes the race
+  -- where two concurrent retries both passed the first existence check.
+  select payload into v_transfer
+  from public.app_data
+  where owner_user_id = p_user_id
+    and collection = 'walletTransfers'
+    and scope_key = p_user_id
+    and record_key = p_transfer_id;
+
+  if found then
+    if v_transfer->>'fromWalletId' <> p_from_wallet_id
+       or v_transfer->>'toWalletId' <> p_to_wallet_id
+       or (v_transfer->>'amount')::numeric <> p_amount
+       or (v_transfer->>'targetAmount')::numeric <> p_target_amount then
+      raise exception 'Transfer id was already used for a different operation' using errcode = '23505';
+    end if;
+    return v_transfer;
+  end if;
 
   select * into v_from
   from public.app_data
