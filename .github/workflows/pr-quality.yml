@@ -33,5 +33,8 @@ jobs:
       - name: TypeScript check
         run: npm run lint
 
+      - name: Migration utility self-tests
+        run: npm run test:migration
+
       - name: Production build
         run: npm run build
