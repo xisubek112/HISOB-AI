@@ -63,3 +63,16 @@ demo token, maps family records to their owning user, uses conflict-safe upserts
 and never modifies or deletes the source JSON file. Do not run it against
 production until the async application repository and staging verification are
 complete. The service-role key must never be pasted into chat or committed.
+
+## Import preflight and retry behavior
+
+Before the first network write, the importer validates that session and data
+owners exist in the legacy user set, checks normalized email uniqueness, and
+checks every record payload can be serialized. It skips the known demo session.
+
+The import is idempotent at the row-key level because it uses PostgREST upserts
+against each table's primary key. If a network failure occurs after some batches
+have been written, do not delete rows manually: inspect the error and rerun the
+same import after correcting the cause. Keep the original JSON backup unchanged.
+The importer does not provide a single transaction across all three tables, so
+a failed run can leave a partial but safely re-runnable import.
