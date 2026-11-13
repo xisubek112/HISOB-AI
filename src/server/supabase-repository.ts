@@ -6,12 +6,14 @@
  */
 import {
   applyFinancialOperationAtomically,
+  executeRecurringTransactionAtomically,
   deleteUserData,
   listUserData,
   saveManyUserData,
   saveUserData,
   transferWalletsAtomically,
   type AtomicFinancialOperationInput,
+  type AtomicRecurringExecutionInput,
   type AtomicWalletTransferInput,
   type AppDataCollection,
   type StoredAppData,
@@ -135,4 +137,12 @@ export async function payDebtAtomically(
   input: Omit<AtomicFinancialOperationInput, 'operationType'>,
 ): Promise<Record<string, unknown>> {
   return applyFinancialOperationAtomically({ ...input, operationType: 'debt_payment' });
+}
+
+
+/** Execute one due recurring schedule and persist its log in the same DB transaction. */
+export async function executeRecurringScheduleAtomically(
+  input: AtomicRecurringExecutionInput,
+): Promise<Record<string, unknown>> {
+  return executeRecurringTransactionAtomically(input);
 }
