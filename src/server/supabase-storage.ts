@@ -112,9 +112,9 @@ export async function checkSupabaseStorage(): Promise<boolean> {
 }
 
 export async function findUserByEmail(email: string): Promise<StoredUser | null> {
-  email = requireNonEmpty(email, 'email').toLowerCase();
+  const normalizedEmail = requireNonEmpty(email, 'email').toLowerCase();
   const rows = await request<StoredUser[]>(
-    `app_users?${query({ select: '*', email_normalized: `eq.${email.trim().toLowerCase()}`, limit: '1' })}`,
+    `app_users?${query({ select: '*', email_normalized: `eq.${normalizedEmail}`, limit: '1' })}`,
   );
   return rows[0] ?? null;
 }
@@ -128,6 +128,10 @@ export async function findUserById(userId: string): Promise<StoredUser | null> {
 }
 
 export async function saveUser(user: StoredUser): Promise<void> {
+  requireNonEmpty(user.id, 'user.id');
+  requireNonEmpty(user.email, 'user.email');
+  requireNonEmpty(user.password_hash, 'user.password_hash');
+  requireNonEmpty(user.password_salt, 'user.password_salt');
   await request<StoredUser[]>(
     'app_users',
     {
@@ -139,6 +143,8 @@ export async function saveUser(user: StoredUser): Promise<void> {
 }
 
 export async function saveSession(session: StoredSession): Promise<void> {
+  requireNonEmpty(session.token_hash, 'session.token_hash');
+  requireNonEmpty(session.user_id, 'session.user_id');
   await request<StoredSession[]>(
     'app_sessions',
     {
@@ -191,6 +197,10 @@ export async function listUserData(
 }
 
 export async function saveUserData(record: StoredAppData): Promise<void> {
+  requireNonEmpty(record.owner_user_id, 'record.owner_user_id');
+  requireCollection(record.collection);
+  requireNonEmpty(record.scope_key, 'record.scope_key');
+  requireNonEmpty(record.record_key, 'record.record_key');
   await request<StoredAppData[]>(
     'app_data',
     {
