@@ -5,11 +5,13 @@
  * wired into Express routes or the legacy synchronous Database class.
  */
 import {
+  applyFinancialOperationAtomically,
   deleteUserData,
   listUserData,
   saveManyUserData,
   saveUserData,
   transferWalletsAtomically,
+  type AtomicFinancialOperationInput,
   type AtomicWalletTransferInput,
   type AppDataCollection,
   type StoredAppData,
@@ -118,4 +120,19 @@ export async function transferWallets(
   input: AtomicWalletTransferInput,
 ): Promise<Record<string, unknown>> {
   return transferWalletsAtomically(input);
+}
+
+
+/** Atomically deposit into a goal; operationId must be unique per user action. */
+export async function depositToGoalAtomically(
+  input: Omit<AtomicFinancialOperationInput, 'operationType'>,
+): Promise<Record<string, unknown>> {
+  return applyFinancialOperationAtomically({ ...input, operationType: 'goal_deposit' });
+}
+
+/** Atomically pay down a debt; operationId makes network retries safe. */
+export async function payDebtAtomically(
+  input: Omit<AtomicFinancialOperationInput, 'operationType'>,
+): Promise<Record<string, unknown>> {
+  return applyFinancialOperationAtomically({ ...input, operationType: 'debt_payment' });
 }
