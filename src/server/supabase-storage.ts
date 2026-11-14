@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { readFileSync } from 'node:fs';
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
@@ -122,6 +123,32 @@ export async function withRetry<T>(
   throw lastErr;
 }
 
+export function buildPostgresSslOptions(
+  connectionString: string,
+  env: NodeJS.ProcessEnv = process.env
+): { rejectUnauthorized: boolean; ca?: string } | undefined {
+  const isLocal = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+  const useSsl = env.PG_SSL === 'true' || (!isLocal && env.PG_SSL !== 'false');
+  if (!useSsl) return undefined;
+
+  const rejectUnauthorized = env.PG_SSL_REJECT_UNAUTHORIZED !== 'false';
+  const caPath = env.PG_SSL_CA_PATH?.trim();
+  if (!caPath) return { rejectUnauthorized };
+
+  let ca: string;
+  try {
+    ca = readFileSync(caPath, 'utf8');
+  } catch {
+    throw new Error('PG_SSL_CA_PATH faylini o‘qib bo‘lmadi. Render Secret File nomi va yo‘lini tekshiring.');
+  }
+
+  if (!ca.includes('-----BEGIN CERTIFICATE-----') || !ca.includes('-----END CERTIFICATE-----')) {
+    throw new Error('PG_SSL_CA_PATH faylida yaroqli PEM sertifikat topilmadi.');
+  }
+
+  return { rejectUnauthorized, ca };
+}
+
 export class PostgresStorage {
   private pool: Pool | null = null;
   private adminClient: SupabaseClient | null = null;
@@ -137,20 +164,13 @@ export class PostgresStorage {
 
   getPool(): Pool {
     if (!this.pool) {
-      const isLocal =
-        this.connectionString.includes('localhost') ||
-        this.connectionString.includes('127.0.0.1');
-      const useSsl =
-        process.env.PG_SSL === 'true' ||
-        (!isLocal && process.env.PG_SSL !== 'false');
-
       this.pool = new Pool({
         connectionString: this.connectionString,
         max: Number(process.env.PG_POOL_MAX || 10),
         idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 30_000),
         connectionTimeoutMillis: Number(process.env.PG_CONNECT_TIMEOUT_MS || 8_000),
         statement_timeout: Number(process.env.PG_STATEMENT_TIMEOUT_MS || 15_000),
-        ssl: useSsl ? { rejectUnauthorized: process.env.PG_SSL_REJECT_UNAUTHORIZED !== 'false' } : undefined,
+        ssl: buildPostgresSslOptions(this.connectionString),
       });
 
       this.pool.on('error', (err) => {
