@@ -598,12 +598,16 @@ export class SupabaseRepository implements AsyncFinanceRepository {
   }
 
   async addWallet(userId: string, wallet: Omit<Wallet, 'id' | 'userId' | 'createdAt'>): Promise<Wallet> {
+    const balance = Number(wallet.balance ?? 0);
+    if (!Number.isFinite(balance) || balance < 0) {
+      throw new Error('Hamyon balansi manfiy boʻlishi yoki notoʻgʻri boʻlishi mumkin emas');
+    }
     const id = `wallet_${crypto.randomUUID()}`;
     const newWallet: Wallet = {
       ...wallet,
       id,
       userId,
-      balance: Math.round(Number(wallet.balance) || 0),
+      balance: Math.round(balance),
       currency: wallet.currency || 'UZS',
       createdAt: new Date().toISOString(),
     };
@@ -1074,10 +1078,14 @@ export class SupabaseRepository implements AsyncFinanceRepository {
       if (!existing.rows[0]) throw new Error('Doimiy toʻlov topilmadi');
       const cur = existing.rows[0].payload;
       const { id: _i, userId: _u, createdAt: _c, ...safeUpdates } = updates;
+      const amount = Math.round(updates.amount !== undefined ? Number(updates.amount) : Number(cur.amount));
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error('Doimiy toʻlov summasi noldan katta boʻlishi kerak');
+      }
       const updated: RecurringTransaction = {
         ...cur,
         ...safeUpdates,
-        amount: updates.amount !== undefined ? Math.round(Number(updates.amount)) : cur.amount,
+        amount,
       };
       await client.query(
         `UPDATE public.app_data SET payload = $1::jsonb, updated_at = now()

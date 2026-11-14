@@ -505,25 +505,38 @@ export async function inspectDatabaseConflicts(
     for (const incoming of plan.users) {
       const existingById = byId.get(incoming.id);
       const existingByEmail = byEmail.get(incoming.email.trim().toLowerCase());
-      const existing = existingById || existingByEmail;
-      if (!existing) continue;
+      if (!existingById && !existingByEmail) continue;
 
       plan.report.counts.usersSkippedExisting++;
 
-      const isEmailIdentityMismatch = existing.id !== incoming.id;
+      // An incoming row must never bind an existing ID to a different email owner,
+      // or an incoming email to a different ID owner. Check both identities independently.
+      const identityCollision =
+        Boolean(existingById && existingByEmail && existingById.id !== existingByEmail.id);
+      const emailIdentityMismatch = Boolean(existingByEmail && existingByEmail.id !== incoming.id);
+      const idIdentityMismatch = Boolean(existingById && existingById.email_normalized !== incoming.email.trim().toLowerCase());
+      const isEmailIdentityMismatch = identityCollision || emailIdentityMismatch || idIdentityMismatch;
       if (isEmailIdentityMismatch) {
         emailConflictUserIds.add(incoming.id);
       }
 
+      const existing = existingById || existingByEmail!;
       const diffs = computeRecordDiffs(incoming.profile, existing.profile || {});
       if (existing.id !== incoming.id) {
         diffs.unshift({ field: 'id', incoming: incoming.id, existing: existing.id });
+      }
+      if (identityCollision) {
+        diffs.unshift({
+          field: 'identity',
+          incoming: 'ID va email ikki xil mavjud akkauntga tegishli',
+          existing: 'Import bekor qilindi',
+        });
       }
       if (existing.password_hash !== incoming.passwordHash) {
         diffs.push({ field: 'passwordHash', incoming: '[changed]', existing: '[existing]' });
       }
 
-      if (diffs.length === 0) {
+      if (diffs.length === 0 && !isEmailIdentityMismatch) {
         plan.report.counts.usersExactMatch++;
       } else {
         plan.report.counts.conflictsDetected++;
