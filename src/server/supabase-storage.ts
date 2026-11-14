@@ -155,6 +155,41 @@ export async function saveSession(session: StoredSession): Promise<void> {
   );
 }
 
+export interface AtomicUserRegistrationInput {
+  user: StoredUser;
+  tokenHash: string;
+  wallets: Record<string, unknown>[];
+  telegramConnection: Record<string, unknown>;
+  welcomeNotification: Record<string, unknown>;
+}
+
+/** Create the account, first session, and initial app records in one DB transaction. */
+export async function registerUserAtomically(input: AtomicUserRegistrationInput): Promise<void> {
+  requireNonEmpty(input.user.id, 'user.id');
+  requireNonEmpty(input.user.email, 'user.email');
+  requireNonEmpty(input.tokenHash, 'tokenHash');
+  if (input.wallets.length !== 2) {
+    throw new SupabaseStorageError('Exactly two initial wallets are required');
+  }
+  await request<Record<string, unknown>>(
+    'rpc/hisobot_register_user',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        p_user_id: input.user.id,
+        p_email: input.user.email,
+        p_password_hash: input.user.password_hash,
+        p_password_salt: input.user.password_salt,
+        p_profile: input.user.profile,
+        p_token_hash: input.tokenHash,
+        p_wallets: input.wallets,
+        p_telegram_connection: input.telegramConnection,
+        p_welcome_notification: input.welcomeNotification,
+      }),
+    },
+  );
+}
+
 export async function findSession(tokenHash: string): Promise<StoredSession | null> {
   tokenHash = requireNonEmpty(tokenHash, 'tokenHash');
   const rows = await request<StoredSession[]>(
