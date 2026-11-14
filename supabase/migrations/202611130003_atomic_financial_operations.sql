@@ -99,7 +99,15 @@ begin
   v_payload := v_record.payload;
 
   if p_operation_type = 'goal_deposit' then
-    v_current := coalesce((v_payload->>'savedAmount')::numeric, 0);
+    if coalesce(trim(v_payload->>'targetAmount'), '') = ''
+       or coalesce(trim(v_payload->>'savedAmount'), '') = '' then
+      raise exception 'Goal target and saved amounts are required' using errcode = '22023';
+    end if;
+    if (v_payload->>'targetAmount')::numeric <= 0
+       or (v_payload->>'savedAmount')::numeric < 0 then
+      raise exception 'Goal amounts are invalid' using errcode = '22023';
+    end if;
+    v_current := (v_payload->>'savedAmount')::numeric;
     v_next := v_current + p_amount;
     v_payload := jsonb_set(v_payload, '{savedAmount}', to_jsonb(v_next), true);
     v_payload := jsonb_set(
@@ -109,7 +117,15 @@ begin
       true
     );
   else
-    v_current := coalesce((v_payload->>'remainingAmount')::numeric, 0);
+    if coalesce(trim(v_payload->>'remainingAmount'), '') = ''
+       or coalesce(trim(v_payload->>'paidAmount'), '') = '' then
+      raise exception 'Debt paid and remaining amounts are required' using errcode = '22023';
+    end if;
+    if (v_payload->>'remainingAmount')::numeric < 0
+       or (v_payload->>'paidAmount')::numeric < 0 then
+      raise exception 'Debt amounts cannot be negative' using errcode = '22023';
+    end if;
+    v_current := (v_payload->>'remainingAmount')::numeric;
     if p_amount > v_current then
       raise exception 'Payment exceeds remaining debt' using errcode = '22003';
     end if;
