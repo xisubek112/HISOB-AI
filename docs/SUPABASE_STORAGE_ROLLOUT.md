@@ -171,3 +171,21 @@ its fixture rows and test writes are not retained. A successful run emits a
 `HISOBOT AI atomic-operation tests passed` notice. These checks are not run by
 GitHub CI because CI has no database connection; a green CI run validates the
 TypeScript build and migration utility self-tests, not the SQL RPCs.
+
+
+## Staged asynchronous authentication service
+
+`src/server/supabase-auth.ts` adds server-only async registration, login,
+token validation, single-session logout, and all-session logout primitives.
+It preserves the legacy PBKDF2-SHA512 password format so existing imported
+accounts can authenticate without forcing a password reset. Raw bearer tokens
+are returned only at login/registration and are stored as SHA-256 hashes in
+`app_sessions`. Expired sessions are rejected and deleted when encountered.
+
+This service is deliberately not connected to the current Express routes yet:
+the existing auth middleware is synchronous, and switching it before converting
+the middleware and its callers would break request handling. Do not enable it
+by setting environment variables alone. The next integration step must make
+auth middleware async, await route-level auth operations, and test registration,
+login, profile lookup, logout, logout-all, invalid credentials, and session
+expiry against a disposable Supabase project.
