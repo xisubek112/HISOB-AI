@@ -74,10 +74,13 @@ begin
   end if;
 
   v_rec := v_rec_row.payload;
-  if v_rec->>'status' <> 'active' then
+  if v_rec->>'status' is distinct from 'active' then
     raise exception 'Recurring schedule is paused' using errcode = '22023';
   end if;
 
+  if coalesce(trim(v_rec->>'nextExecutionDate'), '') = '' then
+    raise exception 'Recurring schedule is missing its next execution date' using errcode = '22023';
+  end if;
   v_scheduled_for := (v_rec->>'nextExecutionDate')::date;
   if v_scheduled_for > (v_now at time zone 'UTC')::date then
     raise exception 'Recurring schedule is not due yet' using errcode = '22023';
@@ -85,11 +88,13 @@ begin
 
   v_amount := (v_rec->>'amount')::numeric;
   v_type := v_rec->>'type';
-  if v_amount <= 0 or v_amount <> round(v_amount) or v_type not in ('income', 'expense') then
+  if v_amount is null or v_amount <= 0 or v_amount <> round(v_amount)
+     or v_type is null or v_type not in ('income', 'expense') then
     raise exception 'Recurring schedule has invalid amount or transaction type' using errcode = '22023';
   end if;
 
-  if v_rec->>'frequency' not in ('weekly', 'monthly', 'quarterly', 'yearly') then
+  if v_rec->>'frequency' is null
+     or v_rec->>'frequency' not in ('weekly', 'monthly', 'quarterly', 'yearly') then
     raise exception 'Recurring schedule has an unsupported frequency' using errcode = '22023';
   end if;
 
@@ -127,6 +132,9 @@ begin
     end if;
 
     v_balance := (v_wallet_row.payload->>'balance')::numeric;
+    if v_balance is null then
+      raise exception 'Recurring payment wallet has an invalid balance' using errcode = '22023';
+    end if;
     if v_type = 'expense' and v_balance < v_amount then
       raise exception 'Insufficient wallet balance for recurring expense' using errcode = '22003';
     end if;
