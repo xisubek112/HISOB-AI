@@ -189,3 +189,20 @@ by setting environment variables alone. The next integration step must make
 auth middleware async, await route-level auth operations, and test registration,
 login, profile lookup, logout, logout-all, invalid credentials, and session
 expiry against a disposable Supabase project.
+
+
+
+## Atomic new-user initialization
+
+The migration `supabase/migrations/202611140005_atomic_user_registration.sql`
+adds the backend-only RPC `hisobot_register_user`. It creates the auth user,
+first hashed-token session, two zero-balance starter wallets, the disconnected
+Telegram connection defaults, and the welcome notification in one PostgreSQL
+transaction. If any insert fails, the entire registration is rolled back.
+
+The staged auth service calls this RPC instead of inserting the user and
+session separately. The RPC must be applied after migration 001 before this
+registration path can be enabled. This change is still not wired into Express;
+existing JSON-backed signup/login remain active. The CI auth test mocks the
+PostgREST RPC and verifies that all expected starter records are requested,
+but it does not execute the SQL function against PostgreSQL.
