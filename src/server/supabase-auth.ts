@@ -155,16 +155,29 @@ export class SupabaseAuthService {
       createdAt: nowIso,
     });
 
-    const defaultWalletId = `w_${crypto.randomUUID()}`;
-    const defaultWallet = {
-      id: defaultWalletId,
+    const primaryWalletId = `w_${crypto.randomUUID()}`;
+    const primaryWallet = {
+      id: primaryWalletId,
       userId,
-      name: 'Asosiy hamyon',
-      type: 'cash',
+      name: 'Asosiy karta',
+      type: 'card',
       balance: 0,
       currency: 'UZS',
       color: '#10B981',
-      icon: 'Wallet',
+      icon: 'CreditCard',
+      createdAt: nowIso,
+    };
+
+    const secondaryWalletId = `w_${crypto.randomUUID()}`;
+    const secondaryWallet = {
+      id: secondaryWalletId,
+      userId,
+      name: 'Naqd pul',
+      type: 'cash',
+      balance: 0,
+      currency: 'UZS',
+      color: '#3B82F6',
+      icon: 'Banknote',
       createdAt: nowIso,
     };
 
@@ -197,7 +210,7 @@ export class SupabaseAuthService {
 
     const res = await this.storage.query<{ profile: UserProfile }>(
       `SELECT public.hisobot_register_user_atomic(
-        $1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8::jsonb, $9, $10::jsonb, $11, $12::timestamptz
+        $1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8, $9::jsonb, $10::jsonb, $11, $12::jsonb, $13, $14::timestamptz
       ) AS profile`,
       [
         userId,
@@ -205,8 +218,10 @@ export class SupabaseAuthService {
         passwordHash,
         salt,
         JSON.stringify(profile),
-        defaultWalletId,
-        JSON.stringify(defaultWallet),
+        primaryWalletId,
+        JSON.stringify(primaryWallet),
+        secondaryWalletId,
+        JSON.stringify(secondaryWallet),
         JSON.stringify(telegramRecord),
         welcomeNotifId,
         JSON.stringify(welcomeNotif),

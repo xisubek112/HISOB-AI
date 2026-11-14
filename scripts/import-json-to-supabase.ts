@@ -8,12 +8,13 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 import dotenv from 'dotenv';
 import { hashSessionToken } from '../src/server/supabase-auth.ts';
-import { PostgresStorage, sanitizePgError } from '../src/server/supabase-storage.ts';
+import { isSupabaseDatabaseConfigured, PostgresStorage, sanitizePgError } from '../src/server/supabase-storage.ts';
 
 dotenv.config();
 
 const DEMO_USER_ID = 'usr_demo_hisobot_2026';
 const DEMO_FAMILY_ID = 'fam_qodirovlar_2026';
+const SENSITIVE_FIELDS = new Set(['passwordHash', 'passwordSalt', 'salt', 'resetToken', 'tokenHash']);
 
 export interface ImportOptions {
   filePath: string;
@@ -46,26 +47,45 @@ export interface PlannedDataRow {
   payload: Record<string, unknown>;
 }
 
+export interface ConflictFieldDiff {
+  field: string;
+  incoming: unknown;
+  existing: unknown;
+}
+
+export interface ImportConflict {
+  entityType: 'app_users' | 'app_data';
+  key: string;
+  reason: 'id_conflict' | 'email_conflict' | 'record_conflict';
+  resolution: 'skipped_no_overwrite';
+  diffs: ConflictFieldDiff[];
+}
+
 export interface ImportReport {
   mode: 'dry-run' | 'apply';
   sourceFile: string;
   valid: boolean;
   batchSize: number;
+  dbConflictCheck: 'checked' | 'skipped_no_database_url' | 'failed';
   counts: {
     usersScanned: number;
     usersPlanned: number;
     usersInserted: number;
     usersSkippedExisting: number;
+    usersExactMatch: number;
     sessionsPlanned: number;
     sessionsInserted: number;
     dataRecordsPlanned: number;
     dataRecordsInserted: number;
     dataRecordsSkippedExisting: number;
+    dataExactMatch: number;
+    conflictsDetected: number;
     skippedDemoRecords: number;
     skippedOrphanRecords: number;
     duplicateRecordsDetected: number;
     byCollection: Record<string, number>;
   };
+  conflicts: ImportConflict[];
   warnings: string[];
   errors: string[];
 }
@@ -75,6 +95,12 @@ export interface ImportPlan {
   sessions: PlannedSessionRow[];
   dataRows: PlannedDataRow[];
   report: ImportReport;
+}
+
+export interface StorageQueryAdapter {
+  query: PostgresStorage['query'];
+  withTransaction?: PostgresStorage['withTransaction'];
+  close?: PostgresStorage['close'];
 }
 
 const USER_ARRAY_COLLECTIONS = [
@@ -133,6 +159,47 @@ export function parseCliArgs(argv: string[]): ImportOptions {
   return { filePath, apply, confirmToken, batchSize, includeDemo, includeSessions, strict };
 }
 
+function stableEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') {
+    return false;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, idx) => stableEqual(v, b[idx]));
+  }
+  const objA = a as Record<string, unknown>;
+  const objB = b as Record<string, unknown>;
+  const keysA = Object.keys(objA).filter((k) => objA[k] !== undefined);
+  const keysB = Object.keys(objB).filter((k) => objB[k] !== undefined);
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every((k) => Object.prototype.hasOwnProperty.call(objB, k) && stableEqual(objA[k], objB[k]));
+}
+
+export function computeRecordDiffs(
+  incoming: Record<string, unknown>,
+  existing: Record<string, unknown>
+): ConflictFieldDiff[] {
+  const keys = new Set([...Object.keys(incoming), ...Object.keys(existing)]);
+  const diffs: ConflictFieldDiff[] = [];
+
+  for (const key of Array.from(keys).sort()) {
+    if (SENSITIVE_FIELDS.has(key)) continue;
+    const inVal = incoming[key];
+    const exVal = existing[key];
+    if (inVal === undefined && exVal === undefined) continue;
+    if (!stableEqual(inVal, exVal)) {
+      diffs.push({
+        field: key,
+        incoming: inVal ?? null,
+        existing: exVal ?? null,
+      });
+    }
+  }
+
+  return diffs;
+}
+
 export function validateAndPlanImport(
   rawData: Record<string, unknown>,
   options: Pick<ImportOptions, 'filePath' | 'apply' | 'batchSize' | 'includeDemo' | 'includeSessions' | 'strict'>
@@ -186,7 +253,6 @@ export function validateAndPlanImport(
     seenEmails.add(emailNorm);
     validUserIds.add(userId);
 
-    // Strip credential fields from profile JSONB
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { passwordHash: _ph, salt: _s, passwordSalt: _ps, resetToken: _rt, ...profile } = u;
     users.push({
@@ -211,7 +277,6 @@ export function validateAndPlanImport(
     byCollection[row.collection] = (byCollection[row.collection] || 0) + 1;
   };
 
-  // User-scoped array collections
   for (const collection of USER_ARRAY_COLLECTIONS) {
     const mapObj = (rawData[collection] && typeof rawData[collection] === 'object'
       ? rawData[collection]
@@ -245,7 +310,6 @@ export function validateAndPlanImport(
     }
   }
 
-  // Telegram connections (object map userId -> connection)
   const telegramMap = (rawData.telegramConnections && typeof rawData.telegramConnections === 'object'
     ? rawData.telegramConnections
     : {}) as Record<string, Record<string, unknown>>;
@@ -269,7 +333,6 @@ export function validateAndPlanImport(
     });
   }
 
-  // Family groups, members, invitations
   const familyGroups = (rawData.familyGroups && typeof rawData.familyGroups === 'object'
     ? rawData.familyGroups
     : {}) as Record<string, Record<string, unknown>>;
@@ -353,7 +416,6 @@ export function validateAndPlanImport(
     }
   }
 
-  // Sessions (optional; off by default; always hashed before storage)
   if (options.includeSessions && rawData.sessions && typeof rawData.sessions === 'object') {
     const rawSessions = rawData.sessions as Record<string, string>;
     for (const [rawToken, uid] of Object.entries(rawSessions)) {
@@ -385,28 +447,158 @@ export function validateAndPlanImport(
       sourceFile: options.filePath,
       valid: errors.length === 0,
       batchSize: options.batchSize,
+      dbConflictCheck: 'skipped_no_database_url',
       counts: {
         usersScanned,
         usersPlanned: users.length,
         usersInserted: 0,
         usersSkippedExisting: 0,
+        usersExactMatch: 0,
         sessionsPlanned: sessions.length,
         sessionsInserted: 0,
         dataRecordsPlanned: dataRows.length,
         dataRecordsInserted: 0,
         dataRecordsSkippedExisting: 0,
+        dataExactMatch: 0,
+        conflictsDetected: 0,
         skippedDemoRecords,
         skippedOrphanRecords,
         duplicateRecordsDetected,
         byCollection,
       },
+      conflicts: [],
       warnings,
       errors,
     },
   };
 }
 
-export async function runJsonImport(options: ImportOptions, storageOverride?: PostgresStorage): Promise<ImportReport> {
+export async function inspectDatabaseConflicts(
+  plan: ImportPlan,
+  storage: StorageQueryAdapter
+): Promise<{ emailConflictUserIds: Set<string> }> {
+  const emailConflictUserIds = new Set<string>();
+
+  if (plan.users.length > 0) {
+    const userIds = plan.users.map((u) => u.id);
+    const emailsNorm = plan.users.map((u) => u.email.trim().toLowerCase());
+
+    const existingUsersRes = await storage.query<{
+      id: string;
+      email: string;
+      email_normalized: string;
+      password_hash: string;
+      profile: Record<string, unknown>;
+    }>(
+      `SELECT id, email, lower(trim(email)) AS email_normalized, password_hash, profile
+         FROM public.app_users
+        WHERE id = ANY($1::text[])
+           OR lower(trim(email)) = ANY($2::text[])`,
+      [userIds, emailsNorm],
+      { retryable: true, label: 'import_inspect_user_conflicts' }
+    );
+
+    const byId = new Map(existingUsersRes.rows.map((r) => [r.id, r]));
+    const byEmail = new Map(existingUsersRes.rows.map((r) => [r.email_normalized, r]));
+
+    for (const incoming of plan.users) {
+      const existingById = byId.get(incoming.id);
+      const existingByEmail = byEmail.get(incoming.email.trim().toLowerCase());
+      const existing = existingById || existingByEmail;
+      if (!existing) continue;
+
+      plan.report.counts.usersSkippedExisting++;
+
+      const isEmailIdentityMismatch = existing.id !== incoming.id;
+      if (isEmailIdentityMismatch) {
+        emailConflictUserIds.add(incoming.id);
+      }
+
+      const diffs = computeRecordDiffs(incoming.profile, existing.profile || {});
+      if (existing.id !== incoming.id) {
+        diffs.unshift({ field: 'id', incoming: incoming.id, existing: existing.id });
+      }
+      if (existing.password_hash !== incoming.passwordHash) {
+        diffs.push({ field: 'passwordHash', incoming: '[changed]', existing: '[existing]' });
+      }
+
+      if (diffs.length === 0) {
+        plan.report.counts.usersExactMatch++;
+      } else {
+        plan.report.counts.conflictsDetected++;
+        plan.report.conflicts.push({
+          entityType: 'app_users',
+          key: incoming.id,
+          reason: isEmailIdentityMismatch ? 'email_conflict' : 'id_conflict',
+          resolution: 'skipped_no_overwrite',
+          diffs,
+        });
+      }
+    }
+  }
+
+  if (plan.dataRows.length > 0) {
+    const owners = plan.dataRows.map((r) => r.ownerUserId);
+    const collections = plan.dataRows.map((r) => r.collection);
+    const scopes = plan.dataRows.map((r) => r.scopeKey);
+    const records = plan.dataRows.map((r) => r.recordKey);
+
+    const existingDataRes = await storage.query<{
+      owner_user_id: string;
+      collection: string;
+      scope_key: string;
+      record_key: string;
+      payload: Record<string, unknown>;
+    }>(
+      `SELECT d.owner_user_id, d.collection, d.scope_key, d.record_key, d.payload
+         FROM public.app_data d
+         JOIN unnest($1::text[], $2::text[], $3::text[], $4::text[])
+           AS k(owner_user_id, collection, scope_key, record_key)
+           ON d.owner_user_id = k.owner_user_id
+          AND d.collection = k.collection
+          AND d.scope_key = k.scope_key
+          AND d.record_key = k.record_key`,
+      [owners, collections, scopes, records],
+      { retryable: true, label: 'import_inspect_data_conflicts' }
+    );
+
+    const existingMap = new Map(
+      existingDataRes.rows.map((r) => [
+        `${r.owner_user_id}::${r.collection}::${r.scope_key}::${r.record_key}`,
+        r.payload,
+      ])
+    );
+
+    for (const row of plan.dataRows) {
+      const pk = `${row.ownerUserId}::${row.collection}::${row.scopeKey}::${row.recordKey}`;
+      const existingPayload = existingMap.get(pk);
+      if (!existingPayload) continue;
+
+      plan.report.counts.dataRecordsSkippedExisting++;
+      const diffs = computeRecordDiffs(row.payload, existingPayload);
+      if (diffs.length === 0) {
+        plan.report.counts.dataExactMatch++;
+      } else {
+        plan.report.counts.conflictsDetected++;
+        plan.report.conflicts.push({
+          entityType: 'app_data',
+          key: pk,
+          reason: 'record_conflict',
+          resolution: 'skipped_no_overwrite',
+          diffs,
+        });
+      }
+    }
+  }
+
+  plan.report.dbConflictCheck = 'checked';
+  return { emailConflictUserIds };
+}
+
+export async function runJsonImport(
+  options: ImportOptions,
+  storageOverride?: StorageQueryAdapter
+): Promise<ImportReport> {
   if (!fs.existsSync(options.filePath)) {
     throw new Error(`Manba fayl topilmadi: ${options.filePath}`);
   }
@@ -419,24 +611,49 @@ export async function runJsonImport(options: ImportOptions, storageOverride?: Po
     return plan.report;
   }
 
-  if (!options.apply) {
-    return plan.report;
-  }
-
-  if (options.confirmToken !== 'IMPORT_HISOBOT_DATA') {
-    plan.report.valid = false;
-    plan.report.errors.push(
-      'Xavfsizlik tasdigʻi yetishmayapti: haqiqiy yozish uchun --apply --confirm=IMPORT_HISOBOT_DATA parametrlarini kiriting'
-    );
-    return plan.report;
-  }
-
-  const storage = storageOverride || new PostgresStorage();
-  const shouldClose = !storageOverride;
+  const canConnectDb = Boolean(storageOverride) || isSupabaseDatabaseConfigured();
+  const storage: StorageQueryAdapter | null = canConnectDb ? storageOverride || new PostgresStorage() : null;
+  const shouldClose = Boolean(storage && !storageOverride && typeof storage.close === 'function');
 
   try {
-    // 1. Insert users idempotently
+    let emailConflictUserIds = new Set<string>();
+    if (storage) {
+      const inspected = await inspectDatabaseConflicts(plan, storage);
+      emailConflictUserIds = inspected.emailConflictUserIds;
+      if (plan.report.counts.conflictsDetected > 0) {
+        plan.report.warnings.push(
+          `${plan.report.counts.conflictsDetected} ta mavjud yozuv bilan farq (conflict) aniqlandi — mavjud maʼlumotlar avtomatik overwrite qilinmadi.`
+        );
+      }
+    } else if (!options.apply) {
+      plan.report.warnings.push(
+        'DATABASE_URL berilmagani sababli faqat lokal JSON validatsiyasi bajarildi; bazadagi mavjud yozuvlar bilan conflict tekshiruvi oʻtkazilmadi.'
+      );
+    }
+
+    if (!options.apply) {
+      return plan.report;
+    }
+
+    if (options.confirmToken !== 'IMPORT_HISOBOT_DATA') {
+      plan.report.valid = false;
+      plan.report.errors.push(
+        'Xavfsizlik tasdigʻi yetishmayapti: haqiqiy yozish uchun --apply --confirm=IMPORT_HISOBOT_DATA parametrlarini kiriting'
+      );
+      return plan.report;
+    }
+
+    if (!storage || !storage.withTransaction) {
+      plan.report.valid = false;
+      plan.report.errors.push('Haqiqiy import uchun DATABASE_URL sozlangan boʻlishi shart');
+      return plan.report;
+    }
+
+    // 1. Insert users idempotently (NEVER overwrite existing users or mismatched-id emails)
     for (const u of plan.users) {
+      if (emailConflictUserIds.has(u.id)) {
+        continue;
+      }
       await storage.withTransaction(async (client) => {
         const res = await client.query(
           `INSERT INTO public.app_users (
@@ -457,15 +674,14 @@ export async function runJsonImport(options: ImportOptions, storageOverride?: Po
               JSON.stringify({ source: path.basename(options.filePath) }),
             ]
           );
-        } else {
-          plan.report.counts.usersSkippedExisting++;
         }
       });
     }
 
-    // 2. Insert app_data in safe batches
-    for (let i = 0; i < plan.dataRows.length; i += options.batchSize) {
-      const batch = plan.dataRows.slice(i, i + options.batchSize);
+    // 2. Insert app_data in safe batches (skip rows belonging to email-conflicted users; NEVER overwrite)
+    const eligibleRows = plan.dataRows.filter((r) => !emailConflictUserIds.has(r.ownerUserId));
+    for (let i = 0; i < eligibleRows.length; i += options.batchSize) {
+      const batch = eligibleRows.slice(i, i + options.batchSize);
       await storage.withTransaction(async (client) => {
         const owners = batch.map((r) => r.ownerUserId);
         const collections = batch.map((r) => r.collection);
@@ -490,12 +706,12 @@ export async function runJsonImport(options: ImportOptions, storageOverride?: Po
         );
         const inserted = res.rowCount || 0;
         plan.report.counts.dataRecordsInserted += inserted;
-        plan.report.counts.dataRecordsSkippedExisting += batch.length - inserted;
       });
     }
 
-    // 3. Insert sessions if opted in
+    // 3. Insert sessions if opted in (never overwrite)
     for (const s of plan.sessions) {
+      if (emailConflictUserIds.has(s.userId)) continue;
       const res = await storage.query(
         `INSERT INTO public.app_sessions (token_hash, user_id, created_at, expires_at, last_used_at)
          VALUES ($1, $2, now(), now() + interval '30 days', now())
@@ -510,11 +726,12 @@ export async function runJsonImport(options: ImportOptions, storageOverride?: Po
 
     return plan.report;
   } catch (err) {
+    plan.report.dbConflictCheck = 'failed';
     plan.report.valid = false;
     plan.report.errors.push(sanitizePgError(err));
     return plan.report;
   } finally {
-    if (shouldClose) {
+    if (shouldClose && storage?.close) {
       await storage.close();
     }
   }

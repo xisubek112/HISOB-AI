@@ -13,11 +13,15 @@ Supabase SQL Editor yoki `psql "$DATABASE_URL"` orqali migratsiyalarni **qatʼiy
 3. `supabase/migrations/202611130003_atomic_financial_operations.sql` — `hisobot_add_transaction`, `hisobot_update_transaction`, `hisobot_delete_transaction`, `hisobot_deposit_to_goal`, `hisobot_pay_debt`.
 4. `supabase/migrations/202611130004_recurring_transactions.sql` — `hisobot_execute_recurring_schedule`.
 5. `supabase/migrations/202611130005_atomic_user_registration.sql` — `hisobot_register_user_atomic` va oilaviy indeks/qidiruv indekslari.
+6. `supabase/migrations/202611130006_dual_starter_wallets_and_idempotency_locks.sql` — roʻyxatdan oʻtishda 2 ta boshlangʻich hamyon (`Asosiy karta` + `Naqd pul`) yaratish va parallel idempotency kalitlari uchun `pg_advisory_xact_lock` himoyasi.
 
-Tekshirish:
+Tekshirish (faqat alohida disposable test bazasida — `DATABASE_URL` ga fallback qilmaydi):
 ```bash
 TEST_DATABASE_URL="postgresql://..." npm run test:pg
+# Yoki vaqtinchalik test DB avtomatik yaratib oʻchirish uchun:
+TEST_ADMIN_DATABASE_URL="postgresql://..." npm run test:pg
 ```
+* Eslatma: `TEST_DATABASE_URL` berilmaganida live PostgreSQL testi aniq `SKIP` boʻladi.
 
 ---
 
@@ -32,7 +36,7 @@ cp data/database.json "data/database.backup.$(date +%Y%m%d_%H%M%S).json"
 ```bash
 npm run import:supabase -- --file data/database.json --dry-run
 ```
-* Eslatma: `usr_demo_hisobot_2026` (demo maʼlumotlar) sukut boʻyicha **oʻtkazib yuboriladi**. Faqat haqiqiy foydalanuvchilar import qilinadi.
+* Eslatma: `usr_demo_hisobot_2026` (demo maʼlumotlar) sukut boʻyicha **oʻtkazib yuboriladi**. Faqat haqiqiy foydalanuvchilar import qilinadi. Agar `DATABASE_URL` berilgan boʻlsa, dry-run ham bazadagi mavjud yozuvlar bilan farqlarni (`conflicts`) koʻrsatadi.
 
 ### 2.3. Haqiqiy import (tasdiqlash kaliti bilan)
 ```bash
@@ -42,7 +46,7 @@ DATABASE_URL="postgresql://..." npm run import:supabase -- \
   --confirm=IMPORT_HISOBOT_DATA \
   --batch-size=100
 ```
-* Skript idempotent (`ON CONFLICT DO NOTHING`): qayta ishga tushirilsa dublikat yaratmaydi.
+* Skript idempotent (`ON CONFLICT DO NOTHING`): mavjud user yoki yozuv bilan conflict aniqlansa, farqlarni `report.conflicts` roʻyxatida koʻrsatadi va **hech qachon avtomatik overwrite qilmaydi**.
 
 ---
 
@@ -53,7 +57,7 @@ Render Dashboard → Service → **Environment** boʻlimida faqat server tomonda
 | Kalit | Tavsiya etilgan qiymat | Izoh |
 |---|---|---|
 | `NODE_ENV` | `production` | Production rejimi |
-| `DB_BACKEND` | `supabase` | PostgreSQL backendni yoqadi (`json` ga oʻzgartirib darhol rollback qilish mumkin) |
+| `DB_BACKEND` | `supabase` | PostgreSQL backendni yoqadi (`DATABASE_URL` boʻlmasa server xavfsiz xato bilan toʻxtaydi, JSON ga jim qaytmaydi) |
 | `DATABASE_URL` | Supabase Pooler URL (`:6543` yoki `:5432`) | SSL bilan ulanish |
 | `SUPABASE_URL` | `https://<project>.supabase.co` | Ixtiyoriy admin mijoz uchun |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase Service Role Key | Faqat backend! APK/frontendga kiritilmaydi |

@@ -40,10 +40,25 @@ export function shouldUseSupabaseBackend(): boolean {
   const explicit = process.env.DB_BACKEND?.trim().toLowerCase();
   if (explicit === 'json') return false;
   if (explicit === 'supabase' || explicit === 'postgres') {
-    return isSupabaseDatabaseConfigured();
+    if (!isSupabaseDatabaseConfigured()) {
+      throw new Error(
+        'DB_BACKEND=supabase belgilangan, lekin DATABASE_URL yoki SUPABASE_DB_URL sozlanmagan. Xavfsizlik sababli JSON bazaga avtomatik fallback bloklandi.'
+      );
+    }
+    return true;
+  }
+  if (explicit && explicit.length > 0) {
+    throw new Error(
+      `Notoʻgʻri DB_BACKEND qiymati: "${explicit}". Ruxsat etilgan qiymatlar: "supabase", "postgres", "json".`
+    );
   }
   // Auto-enable PostgreSQL backend if DATABASE_URL / SUPABASE_DB_URL is configured
   return isSupabaseDatabaseConfigured();
+}
+
+export function validateDatabaseConfiguration(): { backend: 'supabase' | 'json' } {
+  const useSupabase = shouldUseSupabaseBackend();
+  return { backend: useSupabase ? 'supabase' : 'json' };
 }
 
 export function sanitizePgError(err: unknown): string {

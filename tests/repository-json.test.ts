@@ -10,7 +10,11 @@ import os from 'os';
 import path from 'path';
 import { Database } from '../src/server/db.ts';
 import { JsonAsyncRepository } from '../src/server/async-repository.ts';
-import { runJsonImport, validateAndPlanImport } from '../scripts/import-json-to-supabase.ts';
+import {
+  runJsonImport,
+  type StorageQueryAdapter,
+  validateAndPlanImport,
+} from '../scripts/import-json-to-supabase.ts';
 
 function createTempRepo() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hisobot-repo-test-'));
@@ -78,7 +82,9 @@ test('wallet balance sync across transaction add/update/delete, transfers, goals
   try {
     const { user } = await repo.registerUser('finance@hisobot.uz', 'pass1234', 'Finance User');
     const wallets = await repo.getWallets(user.id);
-    assert.ok(wallets.length >= 2);
+    assert.equal(wallets.length, 2);
+    assert.ok(wallets.some((w) => w.name === 'Asosiy karta' && w.type === 'card' && w.color === '#10B981'));
+    assert.ok(wallets.some((w) => w.name === 'Naqd pul' && w.type === 'cash' && w.color === '#3B82F6'));
     const w1 = wallets[0];
     const w2 = wallets[1];
 
@@ -310,6 +316,234 @@ test('JSON importer validates orphans, duplicates, skips demo by default, and en
     });
     assert.equal(unsafeApply.valid, false);
     assert.ok(unsafeApply.errors[0].includes('IMPORT_HISOBOT_DATA'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('JSON importer detects id_conflict, email_conflict, and record_conflict with diffs and NEVER overwrites', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hisobot-import-conflict-'));
+  const jsonFile = path.join(dir, 'conflicts.json');
+  try {
+    const sample = {
+      users: {
+        usr_id_conflict: {
+          id: 'usr_id_conflict',
+          email: 'sameid@hisobot.uz',
+          fullName: 'Incoming Full Name',
+          monthlyBudget: 9_000_000,
+          passwordHash: 'new_hash_secret',
+          salt: 'salt1',
+        },
+        usr_email_conflict_new_id: {
+          id: 'usr_email_conflict_new_id',
+          email: 'taken@hisobot.uz',
+          fullName: 'Email Hijack Attempt',
+          passwordHash: 'hash2',
+          salt: 'salt2',
+        },
+        usr_exact_match: {
+          id: 'usr_exact_match',
+          email: 'exact@hisobot.uz',
+          fullName: 'Exact Match',
+          passwordHash: 'hash_exact',
+          salt: 'salt_exact',
+        },
+      },
+      transactions: {
+        usr_id_conflict: [
+          {
+            id: 'tx_conflict_1',
+            userId: 'usr_id_conflict',
+            amount: 250_000,
+            description: 'Incoming Description',
+          },
+          {
+            id: 'tx_new_safe',
+            userId: 'usr_id_conflict',
+            amount: 75_000,
+            description: 'Brand new tx',
+          },
+        ],
+        usr_email_conflict_new_id: [
+          {
+            id: 'tx_blocked_by_email_conflict',
+            userId: 'usr_email_conflict_new_id',
+            amount: 500_000,
+            description: 'Must not import',
+          },
+        ],
+        usr_exact_match: [
+          {
+            id: 'tx_exact_1',
+            userId: 'usr_exact_match',
+            amount: 100_000,
+            description: 'Exact tx',
+          },
+        ],
+      },
+    };
+    fs.writeFileSync(jsonFile, JSON.stringify(sample), 'utf-8');
+
+    const executedSql: Array<{ sql: string; params: unknown[] }> = [];
+    const mockQuery = async (sql: string, params: unknown[] = []) => {
+      executedSql.push({ sql, params });
+      if (sql.includes('FROM public.app_users')) {
+        return {
+          rows: [
+            {
+              id: 'usr_id_conflict',
+              email: 'sameid@hisobot.uz',
+              email_normalized: 'sameid@hisobot.uz',
+              password_hash: 'existing_hash_secret',
+              profile: {
+                id: 'usr_id_conflict',
+                email: 'sameid@hisobot.uz',
+                fullName: 'Existing Original Name',
+                monthlyBudget: 5_000_000,
+              },
+            },
+            {
+              id: 'usr_original_owner',
+              email: 'taken@hisobot.uz',
+              email_normalized: 'taken@hisobot.uz',
+              password_hash: 'existing_hash_2',
+              profile: {
+                id: 'usr_original_owner',
+                email: 'taken@hisobot.uz',
+                fullName: 'Original Email Owner',
+              },
+            },
+            {
+              id: 'usr_exact_match',
+              email: 'exact@hisobot.uz',
+              email_normalized: 'exact@hisobot.uz',
+              password_hash: 'hash_exact',
+              profile: {
+                id: 'usr_exact_match',
+                email: 'exact@hisobot.uz',
+                fullName: 'Exact Match',
+              },
+            },
+          ],
+          rowCount: 3,
+        };
+      }
+
+      if (sql.includes('FROM public.app_data d')) {
+        return {
+          rows: [
+            {
+              owner_user_id: 'usr_id_conflict',
+              collection: 'transactions',
+              scope_key: 'usr_id_conflict',
+              record_key: 'tx_conflict_1',
+              payload: {
+                id: 'tx_conflict_1',
+                userId: 'usr_id_conflict',
+                amount: 100_000,
+                description: 'Existing DB Description',
+              },
+            },
+            {
+              owner_user_id: 'usr_exact_match',
+              collection: 'transactions',
+              scope_key: 'usr_exact_match',
+              record_key: 'tx_exact_1',
+              payload: {
+                id: 'tx_exact_1',
+                userId: 'usr_exact_match',
+                amount: 100_000,
+                description: 'Exact tx',
+              },
+            },
+          ],
+          rowCount: 2,
+        };
+      }
+
+      if (sql.includes('INSERT INTO public.app_users')) {
+        return { rows: [], rowCount: 0 };
+      }
+
+      if (sql.includes('INSERT INTO public.app_data')) {
+        // Only tx_new_safe should be inserted (1 row); tx_conflict_1 & tx_exact_1 are ON CONFLICT DO NOTHING,
+        // and tx_blocked_by_email_conflict is excluded before INSERT
+        return { rows: [], rowCount: 1 };
+      }
+
+      return { rows: [], rowCount: 0 };
+    };
+
+    const mockStorage: StorageQueryAdapter = {
+      query: mockQuery as unknown as StorageQueryAdapter['query'],
+      withTransaction: (async (fn) =>
+        fn({ query: mockQuery } as unknown as Parameters<typeof fn>[0])) as StorageQueryAdapter['withTransaction'],
+    };
+
+    const report = await runJsonImport(
+      {
+        filePath: jsonFile,
+        apply: true,
+        confirmToken: 'IMPORT_HISOBOT_DATA',
+        batchSize: 50,
+        includeDemo: false,
+        includeSessions: false,
+      },
+      mockStorage
+    );
+
+    assert.equal(report.dbConflictCheck, 'checked');
+    assert.equal(report.counts.usersSkippedExisting, 3);
+    assert.equal(report.counts.usersExactMatch, 1);
+    assert.equal(report.counts.usersInserted, 0);
+    assert.equal(report.counts.dataExactMatch, 1);
+    assert.equal(report.counts.dataRecordsInserted, 1);
+    assert.equal(report.counts.conflictsDetected, 3);
+
+    const idConflict = report.conflicts.find(
+      (c) => c.entityType === 'app_users' && c.key === 'usr_id_conflict'
+    );
+    assert.ok(idConflict);
+    assert.equal(idConflict.reason, 'id_conflict');
+    assert.equal(idConflict.resolution, 'skipped_no_overwrite');
+    assert.deepEqual(
+      idConflict.diffs.find((d) => d.field === 'fullName'),
+      { field: 'fullName', incoming: 'Incoming Full Name', existing: 'Existing Original Name' }
+    );
+    assert.deepEqual(
+      idConflict.diffs.find((d) => d.field === 'passwordHash'),
+      { field: 'passwordHash', incoming: '[changed]', existing: '[existing]' }
+    );
+
+    const emailConflict = report.conflicts.find(
+      (c) => c.entityType === 'app_users' && c.key === 'usr_email_conflict_new_id'
+    );
+    assert.ok(emailConflict);
+    assert.equal(emailConflict.reason, 'email_conflict');
+    assert.deepEqual(
+      emailConflict.diffs.find((d) => d.field === 'id'),
+      { field: 'id', incoming: 'usr_email_conflict_new_id', existing: 'usr_original_owner' }
+    );
+
+    const dataConflict = report.conflicts.find(
+      (c) => c.entityType === 'app_data' && c.key.includes('tx_conflict_1')
+    );
+    assert.ok(dataConflict);
+    assert.equal(dataConflict.reason, 'record_conflict');
+    assert.deepEqual(
+      dataConflict.diffs.find((d) => d.field === 'amount'),
+      { field: 'amount', incoming: 250_000, existing: 100_000 }
+    );
+
+    // Ensure NO DO UPDATE ever ran and dependent tx for email_conflict user was never passed to app_data INSERT
+    for (const q of executedSql) {
+      assert.equal(/DO UPDATE/i.test(q.sql), false, 'Importer must NEVER execute ON CONFLICT DO UPDATE');
+      if (q.sql.includes('INSERT INTO public.app_data')) {
+        const owners = q.params[0] as string[];
+        assert.equal(owners.includes('usr_email_conflict_new_id'), false);
+      }
+    }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

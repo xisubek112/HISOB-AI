@@ -11,7 +11,7 @@ import { pathToFileURL } from 'url';
 import dotenv from 'dotenv';
 import { getRepository } from './src/server/async-repository.ts';
 import { checkAuthRateLimit } from './src/server/supabase-auth.ts';
-import { closeSharedPostgresStorage, sanitizePgError } from './src/server/supabase-storage.ts';
+import { closeSharedPostgresStorage, sanitizePgError, validateDatabaseConfiguration } from './src/server/supabase-storage.ts';
 import {
   parseUzbekTransactionAI,
   answerFinancialQuestionAI,
@@ -1600,6 +1600,14 @@ export function createApp() {
 
 // Vite Middleware for Full-stack Dev or Static Files in Production
 export async function setupVite() {
+  try {
+    validateDatabaseConfiguration();
+    getRepository();
+  } catch (err) {
+    console.error('[HISOBOT DB] Konfiguratsiya xatoligi:', sanitizePgError(err));
+    process.exit(1);
+  }
+
   const app = createApp();
   let viteInstance: { close: () => Promise<void> } | null = null;
 

@@ -224,6 +224,9 @@ export class SupabaseRepository implements AsyncFinanceRepository {
     updates: Partial<Omit<Transaction, 'id' | 'userId' | 'createdAt'>>
   ): Promise<Transaction> {
     const cleanUpdates: Record<string, unknown> = { ...updates };
+    if (updates.type !== undefined && updates.type !== 'income' && updates.type !== 'expense') {
+      throw new Error('Tranzaksiya turi notoʻgʻri');
+    }
     if (updates.amount !== undefined) {
       const amount = Math.round(Number(updates.amount));
       if (!Number.isFinite(amount) || amount <= 0) {
@@ -361,6 +364,12 @@ export class SupabaseRepository implements AsyncFinanceRepository {
     const id = `goal_${crypto.randomUUID()}`;
     const targetAmount = Math.round(Number(goal.targetAmount));
     const savedAmount = Math.round(Number(goal.savedAmount || 0));
+    if (!Number.isFinite(targetAmount) || targetAmount <= 0) {
+      throw new Error('Maqsad summasi noldan katta boʻlishi kerak');
+    }
+    if (!Number.isFinite(savedAmount) || savedAmount < 0) {
+      throw new Error('Jamgʻarilgan summa manfiy boʻlishi mumkin emas');
+    }
     const newGoal: FinancialGoal = {
       ...goal,
       id,
@@ -638,6 +647,9 @@ export class SupabaseRepository implements AsyncFinanceRepository {
     }
     const destAmount =
       targetAmount !== undefined && targetAmount !== null ? Math.round(Number(targetAmount)) : null;
+    if (destAmount !== null && (!Number.isFinite(destAmount) || destAmount <= 0)) {
+      throw new Error('Qabul qiluvchi summa noldan katta boʻlishi kerak');
+    }
 
     const res = await this.storage.query<{ transfer: WalletTransfer }>(
       `SELECT public.hisobot_transfer_between_wallets($1, $2, $3, $4, $5, $6, $7, $8) AS transfer`,
@@ -709,9 +721,15 @@ export class SupabaseRepository implements AsyncFinanceRepository {
     const group = groupRes.rows[0]?.payload || null;
     if (!group) return { group: null, members: [], invitations: [] };
 
+    const members = membersRes.rows.map((r) => r.payload);
+    const isMemberOrOwner = group.ownerId === userId || members.some((m) => m.userId === userId);
+    if (!isMemberOrOwner) {
+      return { group: null, members: [], invitations: [] };
+    }
+
     return {
       group,
-      members: membersRes.rows.map((r) => r.payload),
+      members,
       invitations: invitesRes.rows.map((r) => r.payload),
     };
   }
