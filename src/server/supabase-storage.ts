@@ -231,6 +231,30 @@ export async function listUserData(
   return request<StoredAppData[]>(`app_data?${query(filters)}`);
 }
 
+/** Read one user-owned record without fetching the full collection. */
+export async function findUserDataRecord(
+  userId: string,
+  collection: string,
+  scopeKey: string,
+  recordKey: string,
+): Promise<StoredAppData | null> {
+  userId = requireNonEmpty(userId, 'userId');
+  const allowedCollection = requireCollection(collection);
+  scopeKey = requireNonEmpty(scopeKey, 'scopeKey');
+  recordKey = requireNonEmpty(recordKey, 'recordKey');
+  const rows = await request<StoredAppData[]>(
+    `app_data?${query({
+      select: '*',
+      owner_user_id: `eq.${userId}`,
+      collection: `eq.${allowedCollection}`,
+      scope_key: `eq.${scopeKey}`,
+      record_key: `eq.${recordKey}`,
+      limit: '1',
+    })}`,
+  );
+  return rows[0] ?? null;
+}
+
 export async function saveUserData(record: StoredAppData): Promise<void> {
   requireNonEmpty(record.owner_user_id, 'record.owner_user_id');
   requireCollection(record.collection);
