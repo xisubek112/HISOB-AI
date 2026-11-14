@@ -206,3 +206,15 @@ registration path can be enabled. This change is still not wired into Express;
 existing JSON-backed signup/login remain active. The CI auth test mocks the
 PostgREST RPC and verifies that all expected starter records are requested,
 but it does not execute the SQL function against PostgreSQL.
+
+
+
+## Manual atomic-registration SQL test
+
+After applying migration 001 and then migration 005 to a disposable, non-production
+Supabase project, run `supabase/tests/atomic_registration.sql` in one SQL Editor
+session. It verifies that registration creates exactly one user, one hashed-token
+session, two wallets, Telegram defaults and a welcome notification. It also
+checks that a duplicate email leaves no partial second user, session or app data.
+The script ends with `ROLLBACK`; it is not executed by GitHub CI and has not yet
+been run against a live PostgreSQL instance.
