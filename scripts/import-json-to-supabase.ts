@@ -475,7 +475,8 @@ export function validateAndPlanImport(
 
 export async function inspectDatabaseConflicts(
   plan: ImportPlan,
-  storage: StorageQueryAdapter
+  storage: StorageQueryAdapter,
+  batchSize = 200
 ): Promise<{ emailConflictUserIds: Set<string> }> {
   const emailConflictUserIds = new Set<string>();
 
@@ -538,36 +539,42 @@ export async function inspectDatabaseConflicts(
   }
 
   if (plan.dataRows.length > 0) {
-    const owners = plan.dataRows.map((r) => r.ownerUserId);
-    const collections = plan.dataRows.map((r) => r.collection);
-    const scopes = plan.dataRows.map((r) => r.scopeKey);
-    const records = plan.dataRows.map((r) => r.recordKey);
+    const chunkSize = Math.max(50, batchSize);
+    const existingMap = new Map<string, Record<string, unknown>>();
 
-    const existingDataRes = await storage.query<{
-      owner_user_id: string;
-      collection: string;
-      scope_key: string;
-      record_key: string;
-      payload: Record<string, unknown>;
-    }>(
-      `SELECT d.owner_user_id, d.collection, d.scope_key, d.record_key, d.payload
-         FROM public.app_data d
-         JOIN unnest($1::text[], $2::text[], $3::text[], $4::text[])
-           AS k(owner_user_id, collection, scope_key, record_key)
-           ON d.owner_user_id = k.owner_user_id
-          AND d.collection = k.collection
-          AND d.scope_key = k.scope_key
-          AND d.record_key = k.record_key`,
-      [owners, collections, scopes, records],
-      { retryable: true, label: 'import_inspect_data_conflicts' }
-    );
+    for (let i = 0; i < plan.dataRows.length; i += chunkSize) {
+      const batch = plan.dataRows.slice(i, i + chunkSize);
+      const owners = batch.map((r) => r.ownerUserId);
+      const collections = batch.map((r) => r.collection);
+      const scopes = batch.map((r) => r.scopeKey);
+      const records = batch.map((r) => r.recordKey);
 
-    const existingMap = new Map(
-      existingDataRes.rows.map((r) => [
-        `${r.owner_user_id}::${r.collection}::${r.scope_key}::${r.record_key}`,
-        r.payload,
-      ])
-    );
+      const existingDataRes = await storage.query<{
+        owner_user_id: string;
+        collection: string;
+        scope_key: string;
+        record_key: string;
+        payload: Record<string, unknown>;
+      }>(
+        `SELECT d.owner_user_id, d.collection, d.scope_key, d.record_key, d.payload
+           FROM public.app_data d
+           JOIN unnest($1::text[], $2::text[], $3::text[], $4::text[])
+             AS k(owner_user_id, collection, scope_key, record_key)
+             ON d.owner_user_id = k.owner_user_id
+            AND d.collection = k.collection
+            AND d.scope_key = k.scope_key
+            AND d.record_key = k.record_key`,
+        [owners, collections, scopes, records],
+        { retryable: true, label: 'import_inspect_data_conflicts' }
+      );
+
+      for (const r of existingDataRes.rows) {
+        existingMap.set(
+          `${r.owner_user_id}::${r.collection}::${r.scope_key}::${r.record_key}`,
+          r.payload
+        );
+      }
+    }
 
     for (const row of plan.dataRows) {
       const pk = `${row.ownerUserId}::${row.collection}::${row.scopeKey}::${row.recordKey}`;
@@ -618,7 +625,7 @@ export async function runJsonImport(
   try {
     let emailConflictUserIds = new Set<string>();
     if (storage) {
-      const inspected = await inspectDatabaseConflicts(plan, storage);
+      const inspected = await inspectDatabaseConflicts(plan, storage, options.batchSize);
       emailConflictUserIds = inspected.emailConflictUserIds;
       if (plan.report.counts.conflictsDetected > 0) {
         plan.report.warnings.push(
@@ -667,7 +674,8 @@ export async function runJsonImport(
           await client.query(
             `INSERT INTO public.app_audit_logs (
                id, owner_user_id, action, entity_type, entity_id, details, created_at
-             ) VALUES ($1, $2, 'json_migration_import', 'app_users', $2, $3::jsonb, now())`,
+             ) VALUES ($1, $2, 'json_migration_import', 'app_users', $2, $3::jsonb, now())
+             ON CONFLICT (id) DO NOTHING`,
             [
               `aud_imp_${u.id}`,
               u.id,

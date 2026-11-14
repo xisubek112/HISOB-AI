@@ -1583,11 +1583,17 @@ export function createApp() {
   // Global API error handler — prevents Express 4 unhandled promise rejections & never leaks secrets/DSNs
   app.use('/api', (err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const safeMsg = sanitizePgError(err);
+    const pgCode = (err as { code?: string })?.code;
+    const isPgInfraError =
+      typeof pgCode === 'string' &&
+      (pgCode.startsWith('08') || pgCode.startsWith('57P') || pgCode === 'ECONNREFUSED' || pgCode === 'ENOTFOUND' || pgCode === 'ETIMEDOUT');
     const status =
       typeof (err as { status?: number })?.status === 'number'
         ? (err as { status: number }).status
         : safeMsg.includes('vaqti tugadi')
         ? 504
+        : isPgInfraError
+        ? 503
         : 400;
     if (status >= 500) {
       console.error('[HISOBOT API] Server error:', safeMsg);

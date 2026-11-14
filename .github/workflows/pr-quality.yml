@@ -38,5 +38,15 @@ jobs:
           TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
         run: npm test
 
+      - name: Verify JSON importer dry-run safety
+        run: npm run import:supabase -- --file data/database.json --dry-run
+
+      - name: Verify fail-closed startup when DB_BACKEND=supabase lacks DATABASE_URL
+        run: |
+          if env -u DATABASE_URL -u SUPABASE_DB_URL DB_BACKEND=supabase npx tsx server.ts; then
+            echo "ERROR: Server silently fell back instead of failing closed!"
+            exit 1
+          fi
+
       - name: Production build
         run: npm run build

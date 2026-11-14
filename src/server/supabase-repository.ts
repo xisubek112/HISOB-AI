@@ -394,6 +394,12 @@ export class SupabaseRepository implements AsyncFinanceRepository {
       const cur = existing.rows[0].payload;
       const savedAmount = updates.savedAmount !== undefined ? Math.round(Number(updates.savedAmount)) : cur.savedAmount;
       const targetAmount = updates.targetAmount !== undefined ? Math.round(Number(updates.targetAmount)) : cur.targetAmount;
+      if (!Number.isFinite(targetAmount) || targetAmount <= 0) {
+        throw new Error('Maqsad summasi noldan katta boʻlishi kerak');
+      }
+      if (!Number.isFinite(savedAmount) || savedAmount < 0) {
+        throw new Error('Jamgʻarilgan summa manfiy boʻlishi mumkin emas');
+      }
       const { id: _i, userId: _u, createdAt: _c, ...safeUpdates } = updates;
       const updated: FinancialGoal = {
         ...cur,
@@ -445,6 +451,12 @@ export class SupabaseRepository implements AsyncFinanceRepository {
     const id = `debt_${crypto.randomUUID()}`;
     const amount = Math.round(Number(debt.amount));
     const paidAmount = Math.round(Number(debt.paidAmount || 0));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Qarz summasi noldan katta boʻlishi kerak');
+    }
+    if (!Number.isFinite(paidAmount) || paidAmount < 0 || paidAmount > amount) {
+      throw new Error('Toʻlangan summa notoʻgʻri kiritildi');
+    }
     const remainingAmount = Math.max(0, amount - paidAmount);
 
     let status: Debt['status'] = debt.status || 'active';
@@ -475,6 +487,12 @@ export class SupabaseRepository implements AsyncFinanceRepository {
       const item = existing.rows[0].payload;
       const amount = updates.amount !== undefined ? Math.round(Number(updates.amount)) : item.amount;
       const paidAmount = updates.paidAmount !== undefined ? Math.round(Number(updates.paidAmount)) : item.paidAmount;
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error('Qarz summasi noldan katta boʻlishi kerak');
+      }
+      if (!Number.isFinite(paidAmount) || paidAmount < 0 || paidAmount > amount) {
+        throw new Error('Toʻlangan summa notoʻgʻri kiritildi');
+      }
       const remainingAmount = Math.max(0, amount - paidAmount);
       let status = updates.status || item.status;
       if (remainingAmount === 0) status = 'paid';
@@ -602,11 +620,15 @@ export class SupabaseRepository implements AsyncFinanceRepository {
       );
       if (!existing.rows[0]) throw new Error('Hamyon topilmadi');
       const cur = existing.rows[0].payload;
+      const nextBalance = updates.balance !== undefined ? Math.round(Number(updates.balance)) : cur.balance;
+      if (!Number.isFinite(nextBalance) || nextBalance < 0) {
+        throw new Error('Hamyon balansi manfiy boʻlishi mumkin emas');
+      }
       const { id: _i, userId: _u, createdAt: _c, ...safeUpdates } = updates;
       const updated: Wallet = {
         ...cur,
         ...safeUpdates,
-        balance: updates.balance !== undefined ? Math.round(Number(updates.balance)) : cur.balance,
+        balance: nextBalance,
       };
       await client.query(
         `UPDATE public.app_data SET payload = $1::jsonb, updated_at = now()
@@ -1020,12 +1042,16 @@ export class SupabaseRepository implements AsyncFinanceRepository {
     userId: string,
     rec: Omit<RecurringTransaction, 'id' | 'userId' | 'createdAt'>
   ): Promise<RecurringTransaction> {
+    const amount = Math.round(Number(rec.amount));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Doimiy toʻlov summasi noldan katta boʻlishi kerak');
+    }
     const id = `rec_${crypto.randomUUID()}`;
     const newRec: RecurringTransaction = {
       ...rec,
       id,
       userId,
-      amount: Math.round(Number(rec.amount)),
+      amount,
       currency: rec.currency || 'UZS',
       idempotencyKeyPrefix: rec.idempotencyKeyPrefix || `rec_${Date.now()}`,
       createdAt: new Date().toISOString(),
