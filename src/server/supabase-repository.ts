@@ -8,6 +8,7 @@ import {
   applyFinancialOperationAtomically,
   executeRecurringTransactionAtomically,
   deleteUserData,
+  findUserDataRecord,
   listUserData,
   saveManyUserData,
   saveUserData,
@@ -67,9 +68,13 @@ export async function getRecord<T extends IdentifiedRecord>(
   recordId: string,
   scopeKey = userId,
 ): Promise<T | null> {
-  const id = requireId(recordId, 'recordId');
-  const rows = await getRecords<T>(userId, collection, scopeKey);
-  return rows.find((row) => row.id === id) ?? null;
+  const row = await findUserDataRecord(
+    requireId(userId, 'userId'),
+    collection,
+    requireId(scopeKey, 'scopeKey'),
+    requireId(recordId, 'recordId'),
+  );
+  return row ? row.payload as T : null;
 }
 
 /** Insert or update a single record without replacing its collection. */
