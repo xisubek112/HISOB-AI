@@ -39,7 +39,7 @@ jobs:
         run: npm test
 
       - name: Verify JSON importer dry-run safety
-        run: npm run import:supabase -- --file data/database.json --dry-run
+        run: npm run import:supabase -- --file tests/fixtures/empty-database.json --dry-run
 
       - name: Verify fail-closed startup when DB_BACKEND=supabase lacks DATABASE_URL
         run: |
