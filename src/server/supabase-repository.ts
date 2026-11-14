@@ -38,8 +38,13 @@ function toStoredRecord<T extends IdentifiedRecord>(
   scopeKey: string,
   record: T,
 ): StoredAppData {
+  const ownerId = requireId(userId, 'userId');
+  const recordOwner = (record as Record<string, unknown>).userId;
+  if (recordOwner !== undefined && recordOwner !== ownerId) {
+    throw new Error('Record userId must match the authenticated owner');
+  }
   return {
-    owner_user_id: requireId(userId, 'userId'),
+    owner_user_id: ownerId,
     collection,
     scope_key: requireId(scopeKey, 'scopeKey'),
     record_key: requireId(record.id, 'record.id'),
