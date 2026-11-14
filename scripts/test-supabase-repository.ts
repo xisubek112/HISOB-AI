@@ -61,6 +61,22 @@ async function main() {
   assert.equal(saved.owner_user_id, 'user-a');
   assert.equal(saved.record_key, 'tx-2');
 
+  const beforeOwnerMismatch = requests.length;
+  await assert.rejects(
+    () => putRecord('user-a', 'transactions', {
+      id: 'foreign-tx', userId: 'user-b', amount: 1,
+    }),
+    /Record userId must match the authenticated owner/,
+  );
+  await assert.rejects(
+    () => putRecords('user-a', 'transactions', [
+      { id: 'valid-tx', userId: 'user-a' },
+      { id: 'foreign-tx', userId: 'user-b' },
+    ]),
+    /Record userId must match the authenticated owner/,
+  );
+  assert.equal(requests.length, beforeOwnerMismatch, 'owner mismatch must fail before network I/O');
+
   const beforeDuplicate = requests.length;
   await assert.rejects(
     () => putRecords('user-a', 'transactions', [
