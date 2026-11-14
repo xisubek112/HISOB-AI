@@ -70,11 +70,22 @@ begin
 
   v_retry := public.hisobot_transfer_between_wallets(
     v_user, v_wallet_a, v_wallet_b, 200, 200,
-    'transfer_' || v_suffix, current_date::text, 'staging test retry'
+    'transfer_' || v_suffix, current_date::text, 'staging test'
   );
   if v_retry->>'id' <> v_transfer->>'id' then
     raise exception 'Wallet transfer idempotency assertion failed';
   end if;
+
+  -- Reusing a transfer ID with changed metadata must be rejected.
+  begin
+    perform public.hisobot_transfer_between_wallets(
+      v_user, v_wallet_a, v_wallet_b, 200, 200,
+      'transfer_' || v_suffix, current_date::text, 'different notes'
+    );
+    raise exception 'Expected transfer idempotency conflict was not raised';
+  exception when sqlstate '23505' then
+    null;
+  end;
 
   -- An insufficient-funds transfer must fail and leave balances unchanged.
   begin
