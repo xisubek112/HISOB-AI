@@ -1078,14 +1078,14 @@ export class SupabaseRepository implements AsyncFinanceRepository {
       if (!existing.rows[0]) throw new Error('Doimiy toʻlov topilmadi');
       const cur = existing.rows[0].payload;
       const { id: _i, userId: _u, createdAt: _c, ...safeUpdates } = updates;
-      const amount = updates.amount !== undefined ? Number(updates.amount) : Number(cur.amount);
+      const amount = Math.round(updates.amount !== undefined ? Number(updates.amount) : Number(cur.amount));
       if (!Number.isFinite(amount) || amount <= 0) {
         throw new Error('Doimiy toʻlov summasi noldan katta boʻlishi kerak');
       }
       const updated: RecurringTransaction = {
         ...cur,
         ...safeUpdates,
-        amount: Math.round(amount),
+        amount,
       };
       await client.query(
         `UPDATE public.app_data SET payload = $1::jsonb, updated_at = now()
