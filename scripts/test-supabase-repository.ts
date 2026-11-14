@@ -15,13 +15,21 @@ const mockFetch: typeof fetch = async (input, init = {}) => {
   requests.push({ url, method, body: typeof init.body === 'string' ? init.body : undefined });
 
   if (method === 'GET') {
-    return new Response(JSON.stringify([{
-      owner_user_id: 'user-a',
-      collection: 'transactions',
-      scope_key: 'user-a',
-      record_key: 'tx-1',
-      payload: { id: 'tx-1', userId: 'user-a', amount: 125000 },
-    }]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const owner = url.searchParams.get('owner_user_id');
+    const key = url.searchParams.get('record_key');
+    const rows = owner === 'eq.user-a' && key === 'eq.tx-1'
+      ? [{
+          owner_user_id: 'user-a',
+          collection: 'transactions',
+          scope_key: 'user-a',
+          record_key: 'tx-1',
+          payload: { id: 'tx-1', userId: 'user-a', amount: 125000 },
+        }]
+      : [];
+    return new Response(JSON.stringify(rows), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
   return new Response(null, { status: 204 });
 };
@@ -41,9 +49,15 @@ async function main() {
   assert.equal(params.get('record_key'), 'eq.tx-1');
   assert.equal(params.get('limit'), '1');
 
+  const foreignRecord = await getRecord<{ id: string }>(
+    'user-b', 'transactions', 'tx-1',
+  );
+  assert.equal(foreignRecord, null, 'a different owner must not see another user record');
+  assert.equal(requests[1].url.searchParams.get('owner_user_id'), 'eq.user-b');
+
   await putRecord('user-a', 'transactions', { id: 'tx-2', amount: 5000 });
-  assert.equal(requests[1].method, 'POST');
-  const saved = JSON.parse(requests[1].body ?? '{}') as Record<string, unknown>;
+  assert.equal(requests[2].method, 'POST');
+  const saved = JSON.parse(requests[2].body ?? '{}') as Record<string, unknown>;
   assert.equal(saved.owner_user_id, 'user-a');
   assert.equal(saved.record_key, 'tx-2');
 
