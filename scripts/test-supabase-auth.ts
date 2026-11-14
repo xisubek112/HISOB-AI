@@ -89,7 +89,7 @@ async function main() {
   );
   await assert.rejects(
     () => registerUserInSupabase('test@example.com', 'AnotherPass123!', 'Duplicate'),
-    /failed \(409\)/,
+    /allaqachon roʻyxatdan oʻtgan/,
   );
 
   await logoutFromSupabase(registered.token);
