@@ -11,7 +11,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:migration": "tsx scripts/migrate-json-to-supabase.ts --self-test",
-    "test:auth": "tsx scripts/test-supabase-auth.ts"
+    "test:auth": "tsx scripts/test-supabase-auth.ts",
+    "test:repository": "tsx scripts/test-supabase-repository.ts"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
