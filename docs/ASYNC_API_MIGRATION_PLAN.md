@@ -90,6 +90,18 @@ The legacy JSON schema contains these user-owned collections:
 - [ ] Staging end-to-end and restart-persistence tests pass.
 - [ ] Production rollback/export procedure is documented and rehearsed.
 
+
+## Implementation progress (2026-11-14)
+
+- [x] A typed `AsyncUserDataRepository` contract exists in `src/server/async-repository.ts`.
+- [x] The Supabase implementation exposes owner-scoped list/get/put/batch/delete operations and the existing atomic financial operations through that contract.
+- [x] Mocked contract tests cover owner scoping, CRUD request shape, atomic RPC routing, and invalid financial-operation inputs.
+- [x] CI runs the contract tests through `npm run test:async-repository`.
+- [x] Latest checked PR quality run for this contract completed successfully (TypeScript, migration/auth/repository/contract tests, and production build).
+- [ ] Runtime Express routes remain on the legacy JSON database; no production cutover has occurred.
+- [ ] PostgreSQL migrations and SQL integration scripts still require execution against a disposable Supabase/PostgreSQL project.
+- [ ] Payload validation, family authorization RPCs, and transactional transaction/wallet CRUD remain blockers before route cutover.
+
 ## Explicitly not done by this plan
 
 This document does not change runtime behavior, apply SQL migrations, import data, change Render settings, or enable Supabase. Those actions require separate validation and an explicit production cutover decision.
