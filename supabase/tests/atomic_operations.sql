@@ -13,6 +13,7 @@ declare
   v_goal text := 'goal_' || v_suffix;
   v_debt text := 'debt_' || v_suffix;
   v_recurring text := 'recurring_' || v_suffix;
+  v_invalid_recurring text := 'recurring_invalid_' || v_suffix;
   v_transfer jsonb;
   v_retry jsonb;
   v_result jsonb;
@@ -40,6 +41,14 @@ begin
         'id', v_recurring, 'userId', v_user, 'type', 'expense', 'amount', 50,
         'currency', 'UZS', 'categoryId', 'test_category', 'categoryName', 'Test',
         'description', 'Staging recurring test', 'paymentMethod', 'card',
+        'frequency', 'weekly', 'nextExecutionDate', (current_date - 1)::text,
+        'status', 'active', 'walletId', v_wallet_b
+      )),
+    (v_user, 'recurringTransactions', v_user, v_invalid_recurring,
+      jsonb_build_object(
+        'id', v_invalid_recurring, 'userId', v_user, 'type', 'expense', 'amount', null,
+        'currency', 'UZS', 'categoryId', 'test_category', 'categoryName', 'Test',
+        'description', 'Invalid staging recurring test', 'paymentMethod', 'card',
         'frequency', 'weekly', 'nextExecutionDate', (current_date - 1)::text,
         'status', 'active', 'walletId', v_wallet_b
       ));
@@ -137,6 +146,16 @@ begin
   where owner_user_id = v_user and collection = 'transactions'
     and record_key = v_result->>'id';
   if v_tx_count <> 1 then raise exception 'Recurring transaction count assertion failed: %', v_tx_count; end if;
+
+  -- 5) Malformed recurring data with a NULL amount must be rejected.
+  begin
+    perform public.hisobot_execute_recurring_transaction(
+      v_user, v_invalid_recurring, 'recurring_invalid_exec_' || v_suffix, now()
+    );
+    raise exception 'Expected invalid recurring amount error was not raised';
+  exception when sqlstate '22023' then
+    null;
+  end;
 
   raise notice 'HISOBOT AI atomic-operation tests passed for fixture %', v_suffix;
 end;
