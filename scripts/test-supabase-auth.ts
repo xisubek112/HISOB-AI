@@ -17,6 +17,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-only-service-key';
 type Row = Record<string, unknown>;
 const users: Row[] = [];
 const sessions: Row[] = [];
+const appData: Row[] = [];
 
 function response(data: unknown, status = 200): Response {
   return status === 204
@@ -31,6 +32,28 @@ const mockFetch: typeof fetch = async (input, init = {}) => {
   const url = new URL(String(input));
   const table = url.pathname.split('/').pop();
   const method = init.method ?? 'GET';
+  if (url.pathname.endsWith('/rpc/hisobot_register_user') && method === 'POST') {
+    const body = JSON.parse(String(init.body)) as Row;
+    const email = String(body.p_email).trim().toLowerCase();
+    if (users.some((row) => String(row.email_normalized) === email)) {
+      return response({ message: 'duplicate email' }, 409);
+    }
+    users.push({
+      id: body.p_user_id,
+      email: body.p_email,
+      email_normalized: email,
+      password_hash: body.p_password_hash,
+      password_salt: body.p_password_salt,
+      profile: body.p_profile,
+    });
+    sessions.push({ token_hash: body.p_token_hash, user_id: body.p_user_id });
+    for (const wallet of body.p_wallets as Row[]) {
+      appData.push({ collection: 'wallets', payload: wallet });
+    }
+    appData.push({ collection: 'telegramConnections', payload: body.p_telegram_connection });
+    appData.push({ collection: 'notifications', payload: body.p_welcome_notification });
+    return response({ user_id: body.p_user_id, created: true });
+  }
   const rows = table === 'app_users' ? users : table === 'app_sessions' ? sessions : null;
   if (!rows) return response({ message: 'unexpected endpoint' }, 404);
 
@@ -74,6 +97,9 @@ async function main() {
   assert.match(registered.token, /^[a-f0-9]{64}$/);
   assert.equal(users.length, 1);
   assert.equal(sessions.length, 1);
+  assert.equal(appData.filter((row) => row.collection === 'wallets').length, 2);
+  assert.equal(appData.filter((row) => row.collection === 'telegramConnections').length, 1);
+  assert.equal(appData.filter((row) => row.collection === 'notifications').length, 1);
   assert.ok(!JSON.stringify(sessions).includes(registered.token), 'raw bearer token must never be stored');
 
   const authenticated = await getUserBySupabaseToken(registered.token);
