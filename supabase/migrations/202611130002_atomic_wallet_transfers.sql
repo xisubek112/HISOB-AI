@@ -43,6 +43,9 @@ begin
   if p_amount <> round(p_amount) or p_target_amount <> round(p_target_amount) then
     raise exception 'Transfer amounts must be whole numbers' using errcode = '22023';
   end if;
+  if p_date is null or length(trim(p_date)) = 0 then
+    raise exception 'Transfer date is required' using errcode = '22023';
+  end if;
 
   -- Idempotency: a retry with the same transfer id returns the existing ledger entry.
   select payload into v_transfer
@@ -53,10 +56,12 @@ begin
     and record_key = p_transfer_id;
 
   if found then
-    if v_transfer->>'fromWalletId' <> p_from_wallet_id
-       or v_transfer->>'toWalletId' <> p_to_wallet_id
-       or (v_transfer->>'amount')::numeric <> p_amount
-       or (v_transfer->>'targetAmount')::numeric <> p_target_amount then
+    if v_transfer->>'fromWalletId' is distinct from p_from_wallet_id
+       or v_transfer->>'toWalletId' is distinct from p_to_wallet_id
+       or (v_transfer->>'amount')::numeric is distinct from p_amount
+       or (v_transfer->>'targetAmount')::numeric is distinct from p_target_amount
+       or v_transfer->>'date' is distinct from p_date
+       or v_transfer->>'notes' is distinct from coalesce(p_notes, 'Hamyonlararo ichki oʻtkazma') then
       raise exception 'Transfer id was already used for a different operation' using errcode = '23505';
     end if;
     return v_transfer;
@@ -82,10 +87,12 @@ begin
     and record_key = p_transfer_id;
 
   if found then
-    if v_transfer->>'fromWalletId' <> p_from_wallet_id
-       or v_transfer->>'toWalletId' <> p_to_wallet_id
-       or (v_transfer->>'amount')::numeric <> p_amount
-       or (v_transfer->>'targetAmount')::numeric <> p_target_amount then
+    if v_transfer->>'fromWalletId' is distinct from p_from_wallet_id
+       or v_transfer->>'toWalletId' is distinct from p_to_wallet_id
+       or (v_transfer->>'amount')::numeric is distinct from p_amount
+       or (v_transfer->>'targetAmount')::numeric is distinct from p_target_amount
+       or v_transfer->>'date' is distinct from p_date
+       or v_transfer->>'notes' is distinct from coalesce(p_notes, 'Hamyonlararo ichki oʻtkazma') then
       raise exception 'Transfer id was already used for a different operation' using errcode = '23505';
     end if;
     return v_transfer;
@@ -114,9 +121,16 @@ begin
     raise exception 'Archived wallets cannot be used for transfers' using errcode = '22023';
   end if;
 
+  if coalesce(trim(v_from.payload->>'balance'), '') = ''
+     or coalesce(trim(v_to.payload->>'balance'), '') = '' then
+    raise exception 'Wallet balance is missing' using errcode = '22023';
+  end if;
   v_from_balance := (v_from.payload->>'balance')::numeric;
   v_to_balance := (v_to.payload->>'balance')::numeric;
 
+  if v_from_balance < 0 or v_to_balance < 0 then
+    raise exception 'Wallet balance cannot be negative' using errcode = '22023';
+  end if;
   if v_from_balance < p_amount then
     raise exception 'Insufficient wallet balance' using errcode = '22003';
   end if;
