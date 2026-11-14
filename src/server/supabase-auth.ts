@@ -13,8 +13,8 @@ import {
   findUserByEmail,
   findUserById,
   saveSession,
-  saveUser,
   type StoredUser,
+  registerUserAtomically,
 } from './supabase-storage';
 
 const PBKDF2_ITERATIONS = 1000;
@@ -94,12 +94,61 @@ export async function registerUserInSupabase(
     profile: profile as unknown as Record<string, unknown>,
   };
 
-  // The database's normalized-email unique constraint is the final guard
-  // against concurrent registrations racing past the lookup above.
-  await saveUser(user);
-
+  // Initial account records and the first session are committed atomically.
+  // A failed registration cannot leave an account that blocks a safe retry.
   const token = createToken();
-  await saveSession({ token_hash: hashToken(token), user_id: userId });
+  const tokenHash = hashToken(token);
+  const wallets = [
+    {
+      id: `w_${crypto.randomUUID()}`,
+      userId,
+      name: 'Asosiy karta',
+      type: 'card',
+      balance: 0,
+      currency: 'UZS',
+      color: '#10B981',
+      createdAt: now,
+    },
+    {
+      id: `w_${crypto.randomUUID()}`,
+      userId,
+      name: 'Naqd pul',
+      type: 'cash',
+      balance: 0,
+      currency: 'UZS',
+      color: '#3B82F6',
+      createdAt: now,
+    },
+  ];
+  const telegramConnection = {
+    userId,
+    isConnected: false,
+    connectCode: `HISOBOT-${crypto.randomInt(1000, 10000)}`,
+    preferences: {
+      dailyReport: true,
+      weeklyReport: true,
+      budgetAlerts: true,
+      subscriptionAlerts: true,
+    },
+  };
+  const welcomeNotification = {
+    id: `notif_${crypto.randomUUID()}`,
+    userId,
+    title: 'HISOBOT AI ga xush kelibsiz!',
+    message: 'Shaxsiy moliyangizni aqlli boshqarishni bugunoq boshlang. Birinchi kirim yoki chiqimingizni qoʻshing!',
+    type: 'monthly_summary',
+    date: now.slice(0, 10),
+    isRead: false,
+    linkTab: 'dashboard',
+  };
+
+  await registerUserAtomically({
+    user,
+    tokenHash,
+    wallets,
+    telegramConnection,
+    welcomeNotification,
+  });
   return { user: profile, token };
 }
 
