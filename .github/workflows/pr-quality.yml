@@ -42,5 +42,8 @@ jobs:
       - name: Supabase repository self-tests
         run: npm run test:repository
 
+      - name: Async repository contract tests
+        run: npm run test:async-repository
+
       - name: Production build
         run: npm run build
