@@ -37,6 +37,7 @@ const mockFetch: typeof fetch = async (input, init = {}) => {
   if (method === 'POST') {
     const body = JSON.parse(String(init.body)) as Row;
     if (table === 'app_users') {
+      body.email_normalized = String(body.email).trim().toLowerCase();
       const email = String(body.email).trim().toLowerCase();
       if (users.some((row) => String(row.email).trim().toLowerCase() === email)) {
         return response({ message: 'duplicate email' }, 409);
