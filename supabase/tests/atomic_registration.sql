@@ -9,7 +9,7 @@ declare
   v_user text := 'register_user_' || v_suffix;
   v_duplicate text := 'register_duplicate_' || v_suffix;
   v_email text := 'register_' || v_suffix || '@example.invalid';
-  v_token_hash text := encode(digest(gen_random_uuid()::text, 'sha256'), 'hex');
+  v_token_hash text := md5(gen_random_uuid()::text);
   v_profile jsonb;
   v_wallets jsonb;
   v_telegram jsonb;
@@ -66,7 +66,7 @@ begin
     perform public.hisobot_register_user(
       v_duplicate, v_email, 'test-only-hash-2', 'test-only-salt-2',
       jsonb_set(v_profile, '{id}', to_jsonb(v_duplicate)),
-      encode(digest(gen_random_uuid()::text, 'sha256'), 'hex'),
+      md5(gen_random_uuid()::text),
       jsonb_build_array(
         jsonb_build_object('id', 'wallet_c_' || v_suffix, 'userId', v_duplicate),
         jsonb_build_object('id', 'wallet_d_' || v_suffix, 'userId', v_duplicate)
