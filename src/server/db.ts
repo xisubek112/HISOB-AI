@@ -99,18 +99,23 @@ class Database {
     telegramConnections: {},
   };
 
-  constructor() {
-    this.init();
+  private readonly dbFile: string;
+  private readonly dataDir: string;
+
+  constructor(options?: { dbFilePath?: string; skipDemoSeed?: boolean }) {
+    this.dbFile = options?.dbFilePath ? path.resolve(options.dbFilePath) : DB_FILE;
+    this.dataDir = path.dirname(this.dbFile);
+    this.init(options?.skipDemoSeed === true);
   }
 
-  private init() {
+  private init(skipDemoSeed = false) {
     try {
-      if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
+      if (!fs.existsSync(this.dataDir)) {
+        fs.mkdirSync(this.dataDir, { recursive: true });
       }
 
-      if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      if (fs.existsSync(this.dbFile)) {
+        const raw = fs.readFileSync(this.dbFile, 'utf-8');
         const parsed = JSON.parse(raw);
         this.data = {
           ...this.data,
@@ -129,6 +134,7 @@ class Database {
           telegramConnections: parsed.telegramConnections || {},
         };
       } else if (
+        !skipDemoSeed &&
         process.env.NODE_ENV !== 'production' &&
         process.env.ENABLE_DEMO_SEED === 'true'
       ) {
@@ -141,6 +147,7 @@ class Database {
       }
 
       if (
+        !skipDemoSeed &&
         process.env.NODE_ENV !== 'production' &&
         process.env.ENABLE_DEMO_SEED === 'true'
       ) {
@@ -157,6 +164,7 @@ class Database {
     } catch (e) {
       console.error('Database initialization error:', e);
       if (
+        !skipDemoSeed &&
         process.env.NODE_ENV !== 'production' &&
         process.env.ENABLE_DEMO_SEED === 'true'
       ) {
@@ -169,9 +177,9 @@ class Database {
 
   private persist() {
     try {
-      const tempPath = `${DB_FILE}.tmp`;
+      const tempPath = `${this.dbFile}.tmp`;
       fs.writeFileSync(tempPath, JSON.stringify(this.data, null, 2), 'utf-8');
-      fs.renameSync(tempPath, DB_FILE);
+      fs.renameSync(tempPath, this.dbFile);
     } catch (e) {
       console.error('Failed to persist database:', e);
     }
@@ -709,7 +717,17 @@ class Database {
 
   // Auth Operations
   registerUser(email: string, password: string, fullName: string): { user: UserProfile; token: string } {
-    const existing = Object.values(this.data.users).find((u) => u.email.toLowerCase() === email.toLowerCase());
+    const cleanEmail = email.trim();
+    const cleanName = fullName.trim();
+    if (!cleanEmail || !password || !cleanName) {
+      throw new Error('Barcha maydonlarni toʻldiring');
+    }
+    if (password.length < 6) {
+      throw new Error('Parol kamida 6 belgidan iborat boʻlishi kerak');
+    }
+    const existing = Object.values(this.data.users).find(
+      (u) => u.email.trim().toLowerCase() === cleanEmail.toLowerCase()
+    );
     if (existing) {
       throw new Error('Ushbu elektron pochta allaqachon roʻyxatdan oʻtgan');
     }
@@ -720,8 +738,8 @@ class Database {
 
     const newUser: UserRecord = {
       id: userId,
-      email,
-      fullName,
+      email: cleanEmail,
+      fullName: cleanName,
       currency: 'UZS',
       language: 'uz',
       theme: 'light',
@@ -887,13 +905,21 @@ class Database {
     const user = this.data.users[userId];
     if (!user) throw new Error('Foydalanuvchi topilmadi');
 
-    if (updates.fullName !== undefined) user.fullName = updates.fullName;
-    if (updates.avatarUrl !== undefined) user.avatarUrl = updates.avatarUrl;
+    // Whitelist ONLY user-editable fields; NEVER allow tampering with id, email, isPremium, familyGroupId!
+    if (typeof updates.fullName === 'string' && updates.fullName.trim()) {
+      user.fullName = updates.fullName.trim();
+    }
+    if (typeof updates.avatarUrl === 'string') user.avatarUrl = updates.avatarUrl;
     if (updates.currency !== undefined) user.currency = updates.currency;
-    if (updates.theme !== undefined) user.theme = updates.theme;
-    if (updates.monthlyBudget !== undefined) user.monthlyBudget = updates.monthlyBudget;
-    if (updates.familyGroupId !== undefined) user.familyGroupId = updates.familyGroupId;
-    if (updates.notificationPrefs !== undefined) {
+    if (updates.theme === 'light' || updates.theme === 'dark') user.theme = updates.theme;
+    if (updates.monthlyBudget !== undefined) {
+      const budget = Math.round(Number(updates.monthlyBudget));
+      if (!Number.isFinite(budget) || budget < 0) {
+        throw new Error('Oylik budjet notoʻgʻri kiritildi');
+      }
+      user.monthlyBudget = budget;
+    }
+    if (updates.notificationPrefs !== undefined && typeof updates.notificationPrefs === 'object') {
       user.notificationPrefs = { ...user.notificationPrefs, ...updates.notificationPrefs };
     }
 
@@ -959,12 +985,25 @@ class Database {
   }
 
   addTransaction(userId: string, tx: Omit<Transaction, 'id' | 'userId' | 'createdAt'>): Transaction {
+    const amount = Math.round(Number(tx.amount));
+    if (tx.type !== 'income' && tx.type !== 'expense') {
+      throw new Error('Tranzaksiya turi notoʻgʻri');
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Tranzaksiya summasi noldan katta boʻlishi kerak');
+    }
+
+    // Validate & sync wallet balance BEFORE mutating transactions array
+    if (tx.walletId) {
+      this.updateWalletBalanceOnTx(userId, tx.walletId, amount, tx.type);
+    }
+
     const id = `tx_${crypto.randomUUID()}`;
     const newTx: Transaction = {
       ...tx,
       id,
       userId,
-      amount: Math.round(Number(tx.amount)),
+      amount,
       createdAt: new Date().toISOString(),
     };
 
@@ -972,11 +1011,6 @@ class Database {
       this.data.transactions[userId] = [];
     }
     this.data.transactions[userId].unshift(newTx);
-
-    // Sync with wallet balance if walletId provided
-    if (newTx.walletId) {
-      this.updateWalletBalanceOnTx(userId, newTx.walletId, newTx.amount, newTx.type);
-    }
 
     // Check budget alert threshold
     if (newTx.type === 'expense') {
@@ -992,10 +1026,76 @@ class Database {
     const index = list.findIndex((t) => t.id === id);
     if (index === -1) throw new Error('Tranzaksiya topilmadi');
 
+    const oldTx = list[index];
+    const nextType = updates.type !== undefined ? updates.type : oldTx.type;
+    if (nextType !== 'income' && nextType !== 'expense') {
+      throw new Error('Tranzaksiya turi notoʻgʻri');
+    }
+    const nextAmount = updates.amount !== undefined ? Math.round(Number(updates.amount)) : oldTx.amount;
+    if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+      throw new Error('Tranzaksiya summasi noldan katta boʻlishi kerak');
+    }
+
+    const oldWalletId = oldTx.walletId || undefined;
+    const nextWalletId = updates.walletId !== undefined ? updates.walletId || undefined : oldWalletId;
+
+    // Synchronize wallet balance atomically with validation before writing
+    const wallets = this.data.wallets[userId] || [];
+    if (oldWalletId && oldWalletId === nextWalletId) {
+      const w = wallets.find((item) => item.id === oldWalletId);
+      if (w) {
+        const delta =
+          (oldTx.type === 'income' ? -oldTx.amount : oldTx.amount) +
+          (nextType === 'income' ? nextAmount : -nextAmount);
+        if (w.balance + delta < 0) {
+          throw new Error('Hamyonda yetarli mablagʻ mavjud emas');
+        }
+        w.balance += delta;
+      }
+    } else {
+      if (oldWalletId) {
+        const oldW = wallets.find((item) => item.id === oldWalletId);
+        if (oldW) {
+          const reverseDelta = oldTx.type === 'income' ? -oldTx.amount : oldTx.amount;
+          if (oldW.balance + reverseDelta < 0) {
+            throw new Error('Oldingi hamyon balansini tuzatib boʻlmadi');
+          }
+          oldW.balance += reverseDelta;
+        }
+      }
+      if (nextWalletId) {
+        const newW = wallets.find((item) => item.id === nextWalletId && !item.isArchived);
+        if (!newW) {
+          // Rollback oldW if we already adjusted it
+          if (oldWalletId) {
+            const oldW = wallets.find((item) => item.id === oldWalletId);
+            if (oldW) {
+              oldW.balance -= oldTx.type === 'income' ? -oldTx.amount : oldTx.amount;
+            }
+          }
+          throw new Error('Tanlangan hamyon topilmadi');
+        }
+        const applyDelta = nextType === 'income' ? nextAmount : -nextAmount;
+        if (newW.balance + applyDelta < 0) {
+          if (oldWalletId) {
+            const oldW = wallets.find((item) => item.id === oldWalletId);
+            if (oldW) {
+              oldW.balance -= oldTx.type === 'income' ? -oldTx.amount : oldTx.amount;
+            }
+          }
+          throw new Error('Hamyonda yetarli mablagʻ mavjud emas');
+        }
+        newW.balance += applyDelta;
+      }
+    }
+
+    const { id: _ignoreId, userId: _ignoreUser, createdAt: _ignoreCreated, ...safeUpdates } = updates as Partial<Transaction>;
     const updated: Transaction = {
-      ...list[index],
-      ...updates,
-      amount: updates.amount !== undefined ? Math.round(Number(updates.amount)) : list[index].amount,
+      ...oldTx,
+      ...safeUpdates,
+      type: nextType,
+      amount: nextAmount,
+      walletId: nextWalletId,
       updatedAt: new Date().toISOString(),
     };
 
@@ -1008,6 +1108,14 @@ class Database {
     const list = this.data.transactions[userId] || [];
     const index = list.findIndex((t) => t.id === id);
     if (index === -1) return false;
+    const oldTx = list[index];
+    if (oldTx.walletId) {
+      const wallets = this.data.wallets[userId] || [];
+      const w = wallets.find((item) => item.id === oldTx.walletId);
+      if (w) {
+        w.balance += oldTx.type === 'income' ? -oldTx.amount : oldTx.amount;
+      }
+    }
     list.splice(index, 1);
     this.persist();
     return true;
@@ -1160,20 +1268,35 @@ class Database {
     return updated;
   }
 
-  depositToGoal(userId: string, id: string, amount: number): FinancialGoal {
+  depositToGoal(userId: string, id: string, amount: number, walletId?: string): FinancialGoal {
+    const numAmount = Math.round(Number(amount));
+    if (!Number.isFinite(numAmount) || numAmount <= 0) {
+      throw new Error('Depozit summasi noldan katta boʻlishi kerak');
+    }
+
     const list = this.data.goals[userId] || [];
     const goal = list.find((g) => g.id === id);
     if (!goal) throw new Error('Maqsad topilmadi');
 
-    goal.savedAmount += Math.round(Number(amount));
+    if (walletId) {
+      const wallet = (this.data.wallets[userId] || []).find((w) => w.id === walletId && !w.isArchived);
+      if (!wallet) throw new Error('Tanlangan hamyon topilmadi');
+      if (wallet.balance < numAmount) throw new Error('Hamyonda yetarli mablagʻ mavjud emas');
+      wallet.balance -= numAmount;
+    }
+
+    const wasCompleted = Boolean(goal.isCompleted);
+    goal.savedAmount += numAmount;
     if (goal.savedAmount >= goal.targetAmount) {
       goal.isCompleted = true;
-      this.addNotification(userId, {
-        title: `Maqsadga erishildi!`,
-        message: `Tabriklaymiz! Siz "${goal.name}" uchun koʻzlangan ${new Intl.NumberFormat('uz-UZ').format(goal.targetAmount)} soʻm mablagʻni muvaffaqiyatli toʻpladingiz!`,
-        type: 'goal_reached',
-        linkTab: 'goals',
-      });
+      if (!wasCompleted) {
+        this.addNotification(userId, {
+          title: `Maqsadga erishildi!`,
+          message: `Tabriklaymiz! Siz "${goal.name}" uchun koʻzlangan ${new Intl.NumberFormat('uz-UZ').format(goal.targetAmount)} soʻm mablagʻni muvaffaqiyatli toʻpladingiz!`,
+          type: 'goal_reached',
+          linkTab: 'goals',
+        });
+      }
     }
     this.persist();
     return goal;
@@ -1246,12 +1369,31 @@ class Database {
     return updated;
   }
 
-  payDebt(userId: string, id: string, payment: number): Debt {
+  payDebt(userId: string, id: string, payment: number, walletId?: string): Debt {
+    const pay = Math.round(Number(payment));
+    if (!Number.isFinite(pay) || pay <= 0) {
+      throw new Error('Toʻlov summasi noldan katta boʻlishi kerak');
+    }
+
     const list = this.data.debts[userId] || [];
     const debt = list.find((d) => d.id === id);
     if (!debt) throw new Error('Qarz topilmadi');
+    if (debt.remainingAmount <= 0) {
+      throw new Error('Ushbu qarz allaqachon toʻliq yopilgan');
+    }
+    if (pay > debt.remainingAmount) {
+      throw new Error('Toʻlov summasi qolgan qarzdan oshmasligi kerak');
+    }
 
-    const pay = Math.round(Number(payment));
+    if (walletId) {
+      const wallet = (this.data.wallets[userId] || []).find((w) => w.id === walletId && !w.isArchived);
+      if (!wallet) throw new Error('Tanlangan hamyon topilmadi');
+      if (debt.type === 'borrowed' && wallet.balance < pay) {
+        throw new Error('Hamyonda yetarli mablagʻ mavjud emas');
+      }
+      wallet.balance += debt.type === 'borrowed' ? -pay : pay;
+    }
+
     debt.paidAmount += pay;
     debt.remainingAmount = Math.max(0, debt.amount - debt.paidAmount);
     debt.status = debt.remainingAmount === 0 ? 'paid' : 'partial';
@@ -1358,8 +1500,8 @@ class Database {
     notes?: string
   ): WalletTransfer {
     const list = this.data.wallets[userId] || [];
-    const fromWallet = list.find((w) => w.id === fromWalletId);
-    const toWallet = list.find((w) => w.id === toWalletId);
+    const fromWallet = list.find((w) => w.id === fromWalletId && !w.isArchived);
+    const toWallet = list.find((w) => w.id === toWalletId && !w.isArchived);
 
     if (!fromWallet || !toWallet) {
       throw new Error('Tanlangan hamyonlar topilmadi');
@@ -1369,11 +1511,18 @@ class Database {
     }
 
     const numAmount = Math.round(Number(amount));
-    if (numAmount <= 0) {
+    if (!Number.isFinite(numAmount) || numAmount <= 0) {
       throw new Error('Oʻtkazma summasi noldan katta boʻlishi kerak');
     }
 
-    const destAmount = targetAmount ? Math.round(Number(targetAmount)) : numAmount;
+    const destAmount = targetAmount !== undefined && targetAmount !== null ? Math.round(Number(targetAmount)) : numAmount;
+    if (!Number.isFinite(destAmount) || destAmount <= 0) {
+      throw new Error('Qabul qiluvchi summa noldan katta boʻlishi kerak');
+    }
+
+    if (fromWallet.balance < numAmount) {
+      throw new Error('Manba hamyonda yetarli mablagʻ mavjud emas');
+    }
 
     fromWallet.balance -= numAmount;
     toWallet.balance += destAmount;
@@ -1405,10 +1554,17 @@ class Database {
 
   private updateWalletBalanceOnTx(userId: string, walletId: string, amount: number, type: 'income' | 'expense') {
     const wallets = this.data.wallets[userId] || [];
-    const wallet = wallets.find((w) => w.id === walletId);
-    if (wallet) {
-      if (type === 'income') wallet.balance += amount;
-      else wallet.balance -= amount;
+    const wallet = wallets.find((w) => w.id === walletId && !w.isArchived);
+    if (!wallet) {
+      throw new Error('Tanlangan hamyon topilmadi');
+    }
+    if (type === 'income') {
+      wallet.balance += amount;
+    } else {
+      if (wallet.balance < amount) {
+        throw new Error('Hamyonda yetarli mablagʻ mavjud emas');
+      }
+      wallet.balance -= amount;
     }
   }
 
@@ -1463,12 +1619,23 @@ class Database {
     if (!user?.familyGroupId) throw new Error('Siz hali oilaviy guruhga aʼzo emassiz');
 
     const familyId = user.familyGroupId;
+    const members = this.data.familyMembers[familyId] || [];
+    const currentMember = members.find((m) => m.userId === userId);
+    if (!currentMember || (currentMember.role !== 'owner' && currentMember.role !== 'admin')) {
+      throw new Error('Faqat oila egasi yoki admin yangi aʼzo taklif qila oladi');
+    }
+
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      throw new Error('Yaroqli elektron pochta manzilini kiriting');
+    }
+
     const inviteCode = `FAM-${Math.floor(100000 + Math.random() * 900000)}`;
 
     const inv: FamilyInvitation = {
       id: `inv_${crypto.randomUUID()}`,
       familyId,
-      email: email.trim().toLowerCase(),
+      email: cleanEmail,
       role,
       inviteCode,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -1486,11 +1653,12 @@ class Database {
     const user = this.data.users[userId];
     if (!user) throw new Error('Foydalanuvchi topilmadi');
 
+    const cleanCode = String(inviteCode || '').trim().toUpperCase();
     let matchedInv: FamilyInvitation | null = null;
     let targetFamilyId: string | null = null;
 
     for (const [famId, list] of Object.entries(this.data.familyInvitations)) {
-      const found = list.find((i) => i.inviteCode.toUpperCase() === inviteCode.trim().toUpperCase() && i.status === 'pending');
+      const found = list.find((i) => i.inviteCode.toUpperCase() === cleanCode && i.status === 'pending');
       if (found) {
         matchedInv = found;
         targetFamilyId = famId;
@@ -1502,21 +1670,42 @@ class Database {
       throw new Error('Taklif kodi notoʻgʻri yoki muddati tugagan');
     }
 
+    if (matchedInv.expiresAt && new Date(matchedInv.expiresAt).getTime() <= Date.now()) {
+      matchedInv.status = 'declined';
+      this.persist();
+      throw new Error('Taklif kodining amal qilish muddati tugagan');
+    }
+
+    if (matchedInv.email && matchedInv.email.trim().toLowerCase() !== user.email.trim().toLowerCase()) {
+      throw new Error('Ushbu taklif kodi boshqa elektron pochta uchun yaratilgan');
+    }
+
+    const group = this.data.familyGroups[targetFamilyId];
+    if (!group) {
+      throw new Error('Oilaviy guruh topilmadi');
+    }
+
     matchedInv.status = 'accepted';
     user.familyGroupId = targetFamilyId;
 
-    this.data.familyMembers[targetFamilyId].push({
-      id: `fm_${crypto.randomUUID()}`,
-      familyId: targetFamilyId,
-      userId,
-      email: user.email,
-      fullName: user.fullName,
-      role: matchedInv.role,
-      joinedAt: new Date().toISOString(),
-    });
+    if (!this.data.familyMembers[targetFamilyId]) {
+      this.data.familyMembers[targetFamilyId] = [];
+    }
+    const alreadyMember = this.data.familyMembers[targetFamilyId].some((m) => m.userId === userId);
+    if (!alreadyMember) {
+      this.data.familyMembers[targetFamilyId].push({
+        id: `fm_${crypto.randomUUID()}`,
+        familyId: targetFamilyId,
+        userId,
+        email: user.email,
+        fullName: user.fullName,
+        role: matchedInv.role,
+        joinedAt: new Date().toISOString(),
+      });
+    }
 
     this.persist();
-    return this.data.familyGroups[targetFamilyId];
+    return group;
   }
 
   getFamilyTransactions(userId: string): Transaction[] {
@@ -1635,6 +1824,7 @@ class Database {
       amount: rec.amount,
       categoryId: rec.categoryId,
       categoryName: rec.categoryName,
+      walletId: rec.walletId,
       date: getTodayDateString(),
       time: getCurrentTimeString(),
       description: `${rec.description} (Avtomatik qayd)`,
@@ -1694,6 +1884,15 @@ class Database {
     this.data.receipts[userId].unshift(newReceipt);
     this.persist();
     return newReceipt;
+  }
+
+  linkReceiptTransaction(userId: string, receiptId: string, transactionId: string): ScannedReceipt | null {
+    const list = this.data.receipts[userId] || [];
+    const item = list.find((r) => r.id === receiptId);
+    if (!item) return null;
+    item.transactionId = transactionId;
+    this.persist();
+    return item;
   }
 
   // ==========================================
@@ -1878,4 +2077,5 @@ class Database {
   }
 }
 
+export { Database };
 export const db = new Database();

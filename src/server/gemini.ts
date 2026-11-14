@@ -11,7 +11,7 @@ import {
   type Content,
   type Part,
 } from '@google/genai';
-import { db } from './db.ts';
+import { getRepository } from './async-repository.ts';
 import {
   answerFinancialQuestionAI,
   calculateFinancialForecast,
@@ -187,13 +187,17 @@ function sanitizeErrorForLog(err: unknown): string {
     .slice(0, 220);
 }
 
-function buildUserFinancialContext(userId: string) {
-  const allTx = db.getTransactions(userId);
-  const categories = db.getCategories(userId);
-  const wallets = db.getWallets(userId);
-  const goals = db.getGoals(userId);
-  const debts = db.getDebts(userId);
-  const subscriptions = db.getSubscriptions(userId);
+async function buildUserFinancialContext(userId: string) {
+  const repo = getRepository();
+  const [allTx, categories, wallets, goals, debts, subscriptions, rawBudgets] = await Promise.all([
+    repo.getTransactions(userId),
+    repo.getCategories(userId),
+    repo.getWallets(userId),
+    repo.getGoals(userId),
+    repo.getDebts(userId),
+    repo.getSubscriptions(userId),
+    repo.getBudgets(userId),
+  ]);
 
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -233,7 +237,7 @@ function buildUserFinancialContext(userId: string) {
     }))
     .sort((a, b) => b.amount - a.amount);
 
-  const budgets = db.getBudgets(userId).map((b) => {
+  const budgets = rawBudgets.map((b) => {
     const spent = thisMonthTx
       .filter((t) => t.type === 'expense' && (t.categoryId === b.categoryId || t.categoryName === b.categoryName))
       .reduce((s, t) => s + t.amount, 0);
@@ -370,14 +374,16 @@ function matchCategory(categories: Category[], rawName: string, type: 'income' |
   return sameType[sameType.length - 1];
 }
 
-function buildReportForPeriod(
+async function buildReportForPeriod(
   userId: string,
   period: 'today' | 'week' | 'month' | 'year',
   focus: string | undefined,
   lang: 'uz' | 'ru' | 'en'
 ) {
-  const ctx = buildUserFinancialContext(userId);
-  const allTx = db.getTransactions(userId);
+  const [ctx, allTx] = await Promise.all([
+    buildUserFinancialContext(userId),
+    getRepository().getTransactions(userId),
+  ]);
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   const formatYMD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -606,7 +612,7 @@ const assistantToolDeclarations: FunctionDeclaration[] = [
   },
 ];
 
-function buildSystemInstruction(user: UserProfile, ctx: ReturnType<typeof buildUserFinancialContext>): string {
+function buildSystemInstruction(user: UserProfile, ctx: Awaited<ReturnType<typeof buildUserFinancialContext>>): string {
   const compactStats = {
     userName: user.fullName,
     currency: user.currency,
@@ -804,7 +810,7 @@ async function runFallbackAssistantTurn(params: {
   warning?: string;
 }): Promise<AssistantTurnResult> {
   const { user, message, lang, warning } = params;
-  const ctx = buildUserFinancialContext(user.id);
+  const ctx = await buildUserFinancialContext(user.id);
   const q = message.toLowerCase().trim();
 
   // 1. Check casual greetings / small talk
@@ -995,7 +1001,7 @@ export async function runGeminiAssistantTurn(params: {
     });
   }
 
-  const ctx = buildUserFinancialContext(user.id);
+  const ctx = await buildUserFinancialContext(user.id);
   const systemInstruction = buildSystemInstruction(user, ctx);
 
   // Build clean multi-turn contents (limit to recent 12 turns for speed & token efficiency)
@@ -1042,7 +1048,7 @@ export async function runGeminiAssistantTurn(params: {
         const period: 'today' | 'week' | 'month' | 'year' =
           rawPeriod === 'today' || rawPeriod === 'week' || rawPeriod === 'year' ? rawPeriod : 'month';
         const focus = callArgs.focus ? String(callArgs.focus) : undefined;
-        const { structuredRows, reportData } = buildReportForPeriod(user.id, period, focus, detectedLang);
+        const { structuredRows, reportData } = await buildReportForPeriod(user.id, period, focus, detectedLang);
 
         const modelContent = response1.candidates?.[0]?.content;
         if (modelContent) {

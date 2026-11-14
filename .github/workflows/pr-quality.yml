@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   quality:
-    name: TypeScript and production build
+    name: TypeScript, Tests, and Production Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -32,6 +32,11 @@ jobs:
 
       - name: TypeScript check
         run: npm run lint
+
+      - name: Automated unit, repository, migration & API regression tests
+        env:
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+        run: npm test
 
       - name: Production build
         run: npm run build

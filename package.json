@@ -9,7 +9,10 @@
     "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts supabase/tests/*.test.ts",
+    "test:pg": "node --import tsx --test supabase/tests/migration-integrity.test.ts",
+    "import:supabase": "tsx scripts/import-json-to-supabase.ts"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
@@ -19,8 +22,10 @@
     "@capacitor/local-notifications": "^8.3.1",
     "@capgo/capacitor-native-biometric": "^8.9.3",
     "@google/genai": "^3.3.0",
+    "@supabase/supabase-js": "^2.119.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/canvas-confetti": "^1.9.0",
+    "@types/pg": "^8.23.1",
     "@vitejs/plugin-react": "^6.1.1",
     "canvas-confetti": "^1.9.4",
     "capacitor-native-settings": "^8.2.0",
@@ -28,6 +33,7 @@
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "pg": "^8.23.1",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "tsx": "^4.21.0",
