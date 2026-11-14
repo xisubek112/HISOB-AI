@@ -33,5 +33,17 @@ jobs:
       - name: TypeScript check
         run: npm run lint
 
+      - name: Migration utility self-tests
+        run: npm run test:migration
+
+      - name: Supabase auth self-tests
+        run: npm run test:auth
+
+      - name: Supabase repository self-tests
+        run: npm run test:repository
+
+      - name: Async repository contract tests
+        run: npm run test:async-repository
+
       - name: Production build
         run: npm run build
