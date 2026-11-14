@@ -49,14 +49,14 @@ const mockFetch: typeof fetch = async (input, init = {}) => {
   const filters = [...url.searchParams.entries()].filter(([key]) => key !== 'select' && key !== 'limit');
   if (method === 'DELETE') {
     for (let i = rows.length - 1; i >= 0; i -= 1) {
-      if (filters.every(([key, value]) => String(rows[i][key]) === value.slice(4))) rows.splice(i, 1);
+      if (filters.every(([key, value]) => String(rows[i][key]) === value.slice(3))) rows.splice(i, 1);
     }
     return response(null, 204);
   }
 
   if (method === 'GET') {
     const matches = rows.filter((row) =>
-      filters.every(([key, value]) => String(row[key]) === value.slice(4)),
+      filters.every(([key, value]) => String(row[key]) === value.slice(3)),
     );
     return response(matches.slice(0, Number(url.searchParams.get('limit') ?? '100')));
   }
