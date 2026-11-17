@@ -17,7 +17,7 @@ import { clearAuthRateLimitForTests } from '../src/server/supabase-auth.ts';
 import { clearAdminRateLimitForTests } from '../src/server/admin-auth.ts';
 import { OFFICIAL_CREATOR_REPLIES } from '../src/server/gemini.ts';
 
-const OFFICIAL_ADMIN_EMAIL = 'xisomiddinziyomutdinov@gmail.com';
+const OFFICIAL_ADMIN_EMAIL = 'ziyamutdinovxisomiddin@gmail.com';
 const TEST_ADMIN_CODE = 'XISU-Test-Code-9482';
 
 async function startTestServer() {

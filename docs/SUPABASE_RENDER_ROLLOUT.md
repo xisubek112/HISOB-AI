@@ -67,7 +67,7 @@ Render Dashboard → Service → **Environment** boʻlimida faqat server tomonda
 | `SESSION_TTL_DAYS` | `30` | Sessiya amal qilish muddati |
 | `ALLOWED_ORIGINS` | `https://<render-app>.onrender.com` | Capacitor (`capacitor://localhost`, `https://localhost`) avtomatik ruxsat etilgan |
 | `GEMINI_API_KEY` | Gemini API kaliti | AI Yordamchi uchun |
-| `ADMIN_EMAIL` | `xisugamer@gmail.com` | Yagona rasmiy Super Admin emaili (faqat server tomonda; boʻsh boʻlsa `/admin` yopiq qoladi) |
+| `ADMIN_EMAIL` | `ziyamutdinovxisomiddin@gmail.com` | Yagona rasmiy Super Admin emaili (faqat server tomonda; boʻsh boʻlsa `/admin` yopiq qoladi) |
 | `ADMIN_ACCESS_CODE` | Kamida 6 belgili maxfiy kod | Admin paneliga kirish uchun alohida 2-bosqichli maxfiy kod (faqat server tomonda) |
 | `ENABLE_DEMO_SEED` | `false` | Productionda qatʼiyan `false` |
 
