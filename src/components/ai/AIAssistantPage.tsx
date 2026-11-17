@@ -122,15 +122,17 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
     conversations.find((c) => c.id === activeConvId) || conversations[0];
   const messages = activeConv?.messages || [];
   const hasUserMessages = messages.some((m) => m.role === 'user');
+  const hasStreamingMessage = messages.some((m) => m.isStreaming);
 
-  // Persist conversation history
+  // Persist conversation history (skip mid-stream chunks for zero UI jank)
   useEffect(() => {
+    if (hasStreamingMessage) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(conversations.slice(0, 25)));
     } catch {
       // ignore storage quota errors
     }
-  }, [conversations, storageKey]);
+  }, [conversations, storageKey, hasStreamingMessage]);
 
   // Load Financial Health Score
   const loadHealth = useCallback(async () => {
@@ -146,8 +148,6 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
   useEffect(() => {
     loadHealth();
   }, [loadHealth]);
-
-  const hasStreamingMessage = messages.some((m) => m.isStreaming);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: hasStreamingMessage ? 'auto' : 'smooth' });

@@ -267,25 +267,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             <section
               aria-label="HISOBOT AI yordamchisi"
-              className="relative flex min-h-[190px] items-center gap-4 overflow-hidden rounded-[22px] border border-emerald-500/20 dark:border-white/[0.09] bg-gradient-to-br from-[#0F3F3A] via-[#0E3130] to-[#0C2228] p-5 text-white shadow-[0_16px_45px_rgba(0,0,0,0.22)]"
+              className="relative flex min-h-[190px] items-center gap-4 overflow-hidden rounded-[22px] border border-emerald-500/30 dark:border-emerald-400/25 bg-gradient-to-br from-emerald-400/24 via-emerald-500/14 to-teal-400/20 dark:from-emerald-500/22 dark:via-emerald-700/16 dark:to-teal-900/24 backdrop-blur-xl p-5 text-emerald-950 dark:text-white shadow-[0_14px_38px_rgba(16,185,129,0.14),inset_0_1px_0_rgba(255,255,255,0.45)] dark:shadow-[0_16px_45px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.12)]"
             >
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-teal-400/12 blur-3xl"
+                className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/30 via-transparent to-transparent dark:from-white/[0.07]"
               />
-              <div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-teal-300/25 bg-teal-300/10 text-teal-300 shadow-[0_0_30px_rgba(6,182,212,0.14)]">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-emerald-400/25 dark:bg-teal-400/15 blur-3xl"
+              />
+              <div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-emerald-500/35 dark:border-emerald-300/30 bg-white/45 dark:bg-emerald-400/15 backdrop-blur-md text-emerald-700 dark:text-emerald-300 shadow-[0_0_24px_rgba(16,185,129,0.18)]">
                 <Bot size={36} />
-                <Sparkles className="absolute -right-1 -top-1 text-emerald-300" size={16} />
+                <Sparkles className="absolute -right-1 -top-1 text-emerald-600 dark:text-emerald-300" size={16} />
               </div>
               <div className="relative min-w-0 flex-1">
-                <h2 className="mb-1 text-lg font-black tracking-tight text-white">HISOBOT AI</h2>
-                <p className="mb-3.5 text-xs leading-relaxed text-slate-200/85">
+                <h2 className="mb-1 text-lg font-black tracking-tight text-emerald-950 dark:text-white">HISOBOT AI</h2>
+                <p className="mb-3.5 text-xs leading-relaxed text-emerald-950/75 dark:text-emerald-50/85">
                   Sizning aqlli moliyaviy yordamchingiz.
                 </p>
                 <button
                   type="button"
                   onClick={() => onNavigateTab('ai')}
-                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-3.5 py-2 text-xs font-bold text-[#05251D] transition hover:bg-emerald-300 cursor-pointer shadow-[0_4px_16px_rgba(16,185,129,0.28)]"
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 dark:bg-emerald-400 dark:hover:bg-emerald-300 px-3.5 py-2 text-xs font-bold text-[#05251D] transition cursor-pointer shadow-[0_6px_18px_rgba(16,185,129,0.28)]"
                 >
                   <span>AI bilan suhbat</span>
                   <ChevronRight size={15} />

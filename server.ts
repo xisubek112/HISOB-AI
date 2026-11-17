@@ -22,10 +22,12 @@ import {
 import {
   GEMINI_MODEL,
   checkUserRateLimit,
+  getLastGeminiDiagnostic,
   invalidateUserAiContext,
   isGeminiConfigured,
   parseReceiptWithGemini,
   parseTransactionWithGemini,
+  prewarmUserAiContext,
   runGeminiAssistantTurn,
   streamGeminiAssistantTurn,
   type GeminiHistoryItem,
@@ -800,10 +802,14 @@ export function createApp() {
   );
 
   // --- AI ASSISTANT ROUTES ---
-  app.get('/api/ai/status', authMiddleware, (_req: AuthenticatedRequest, res: Response) => {
+  app.get('/api/ai/status', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+    if (req.user?.id) {
+      prewarmUserAiContext(req.user.id);
+    }
     res.json({
       configured: isGeminiConfigured(),
       model: GEMINI_MODEL,
+      lastDiagnostic: getLastGeminiDiagnostic(),
     });
   });
 
@@ -1187,6 +1193,7 @@ export function createApp() {
     authMiddleware,
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
       const userId = req.user!.id;
+      prewarmUserAiContext(userId);
       const repo = getRepository();
       const [allTx, debts, goals, budgets] = await Promise.all([
         repo.getTransactions(userId),

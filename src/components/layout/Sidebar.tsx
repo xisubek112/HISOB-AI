@@ -231,11 +231,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   className="flex items-center gap-2.5 text-left min-w-0 flex-1 group cursor-pointer"
                 >
                   <img
+                    key={user.avatarUrl || 'default-avatar'}
                     src={user.avatarUrl || '/src/assets/images/avatar_user_profile_1794280921902.jpg'}
                     alt={user.fullName}
                     referrerPolicy="no-referrer"
                     onError={(e) => {
-                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.src = '/src/assets/images/avatar_user_profile_1794280921902.jpg';
                     }}
                     className="w-8 h-8 rounded-full object-cover shrink-0 border border-emerald-500/30"
                   />

@@ -207,15 +207,30 @@ export const PrivacyPermissionsSection: React.FC = () => {
                     </Button>
                   )}
 
-                <label className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#081220] text-[11px] font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={item.featureEnabled}
+                  aria-label={`${copy.title} — ${item.featureEnabled ? 'Faol' : 'Oʻchirilgan'}`}
+                  onClick={() => handleToggleFeature(item.key, !item.featureEnabled)}
+                  className="inline-flex items-center gap-2.5 px-3 py-2 min-h-[40px] rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#081220] text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-500/40 transition-colors cursor-pointer"
+                >
                   <span>{item.featureEnabled ? 'Faol' : 'Oʻchirilgan'}</span>
-                  <input
-                    type="checkbox"
-                    checked={item.featureEnabled}
-                    onChange={(e) => handleToggleFeature(item.key, e.target.checked)}
-                    className="w-3.5 h-3.5 rounded accent-emerald-500 cursor-pointer"
-                  />
-                </label>
+                  <span
+                    aria-hidden="true"
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ${
+                      item.featureEnabled
+                        ? 'bg-emerald-500'
+                        : 'bg-slate-300 dark:bg-slate-700'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-xs transition-transform duration-200 ${
+                        item.featureEnabled ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                      }`}
+                    />
+                  </span>
+                </button>
               </div>
             </div>
           );

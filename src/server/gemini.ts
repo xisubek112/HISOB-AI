@@ -29,13 +29,14 @@ import type {
 } from '../types/finance.ts';
 import { getTodayDateString } from '../utils/formatters.ts';
 
-export const GEMINI_MODEL = 'gemini-4-hydrogen';
 export const GEMINI_FAST_MODEL = 'gemini-3.1-flash-lite';
+export const GEMINI_MODEL = GEMINI_FAST_MODEL;
+export const GEMINI_SECONDARY_MODEL = 'gemini-4-hydrogen';
 
-const REQUEST_TIMEOUT_MS = 25_000;
-const CONTEXT_CACHE_TTL_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 10_000;
+const CONTEXT_CACHE_TTL_MS = 60_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX_REQUESTS = 20;
+const RATE_LIMIT_MAX_REQUESTS = 30;
 
 const userRequestTimestamps = new Map<string, number[]>();
 
@@ -58,6 +59,12 @@ export interface AssistantTurnResult {
   proposedAction?: AIProposedAction;
   source: 'gemini' | 'fallback';
   warning?: string;
+}
+
+let lastGeminiDiagnostic: { error?: string; at?: string; model?: string } = {};
+
+export function getLastGeminiDiagnostic() {
+  return lastGeminiDiagnostic;
 }
 
 export function isGeminiConfigured(): boolean {
@@ -373,6 +380,13 @@ export function invalidateUserAiContext(userId: string) {
   userContextCache.delete(userId);
 }
 
+export function prewarmUserAiContext(userId: string) {
+  if (!userId || userContextCache.has(userId) || inFlightContextLoads.has(userId)) return;
+  void buildUserFinancialContext(userId).catch(() => {
+    // non-fatal prewarm
+  });
+}
+
 async function buildUserFinancialContext(userId: string): Promise<UserFinancialContext> {
   const cached = userContextCache.get(userId);
   if (cached && cached.expiresAt > Date.now()) {
@@ -675,65 +689,69 @@ const assistantToolDeclarations: FunctionDeclaration[] = [
 ];
 
 function buildSystemInstruction(user: UserProfile, ctx: UserFinancialContext): string {
-  const compactStats = {
-    userName: user.fullName,
-    currency: user.currency,
+  const compactStats: Record<string, unknown> = {
+    name: user.fullName,
+    cur: user.currency,
     today: ctx.todayStr,
-    totalBalance: ctx.totalBalance,
-    todayIncome: ctx.todayIncome,
-    todayExpense: ctx.todayExpense,
-    thisWeekIncome: ctx.thisWeekIncome,
-    thisWeekExpense: ctx.thisWeekExpense,
-    thisMonthIncome: ctx.thisMonthIncome,
-    thisMonthExpense: ctx.thisMonthExpense,
-    netSavingsThisMonth: ctx.netSavings,
-    lastMonthIncome: ctx.lastMonthIncome,
-    lastMonthExpense: ctx.lastMonthExpense,
-    thisYearIncome: ctx.thisYearIncome,
-    thisYearExpense: ctx.thisYearExpense,
-    topExpenseCategories: ctx.topExpenseCategories.slice(0, 5),
-    budgets: ctx.budgets,
-    goals: ctx.goals,
-    debtsSummary: {
-      borrowed: ctx.debtsSummary.totalBorrowed,
-      lent: ctx.debtsSummary.totalLent,
-    },
-    wallets: ctx.wallets,
-    activeSubscriptions: ctx.subscriptions,
-    healthScore: {
-      score: ctx.healthScore.score,
-      grade: ctx.healthScore.grade,
-      title: ctx.healthScore.title,
-    },
-    forecast: {
-      monthEndExpectedBalance: ctx.forecast.monthEndExpectedBalance,
-      confidenceScore: ctx.forecast.confidenceScore,
-    },
-    availableCategories: {
-      income: ctx.categories.filter((c) => c.type === 'income').map((c) => c.name),
-      expense: ctx.categories.filter((c) => c.type === 'expense').map((c) => c.name),
-    },
-    recentTransactions: ctx.recentTransactions.slice(0, 6),
+    bal: ctx.totalBalance,
+    todayIn: ctx.todayIncome,
+    todayOut: ctx.todayExpense,
+    weekIn: ctx.thisWeekIncome,
+    weekOut: ctx.thisWeekExpense,
+    monthIn: ctx.thisMonthIncome,
+    monthOut: ctx.thisMonthExpense,
+    net: ctx.netSavings,
+    lastMonthIn: ctx.lastMonthIncome,
+    lastMonthOut: ctx.lastMonthExpense,
+    yearIn: ctx.thisYearIncome,
+    yearOut: ctx.thisYearExpense,
+    health: `${ctx.healthScore.score}/100 (${ctx.healthScore.grade})`,
+    forecastBal: ctx.forecast.monthEndExpectedBalance,
   };
 
-  return `You are HISOBOT AI Assistant — an intelligent, warm, trustworthy, and fast personal finance advisor inside the HISOBOT AI app.
+  if (ctx.topExpenseCategories.length > 0) {
+    compactStats.topExp = ctx.topExpenseCategories.slice(0, 4);
+  }
+  if (ctx.budgets.length > 0) {
+    compactStats.budgets = ctx.budgets.slice(0, 6);
+  }
+  if (ctx.goals.length > 0) {
+    compactStats.goals = ctx.goals.slice(0, 5);
+  }
+  if (ctx.debtsSummary.totalBorrowed > 0 || ctx.debtsSummary.totalLent > 0) {
+    compactStats.debts = {
+      borrowed: ctx.debtsSummary.totalBorrowed,
+      lent: ctx.debtsSummary.totalLent,
+    };
+  }
+  if (ctx.wallets.length > 0) {
+    compactStats.wallets = ctx.wallets.map((w) => `${w.name}:${w.balance}${w.currency}`);
+  }
+  if (ctx.subscriptions.length > 0) {
+    compactStats.subs = ctx.subscriptions.map((s) => `${s.serviceName}:${s.amount}`);
+  }
+  if (ctx.recentTransactions.length > 0) {
+    compactStats.recent = ctx.recentTransactions
+      .slice(0, 4)
+      .map((t) => `${t.date} ${t.type === 'income' ? '+' : '-'}${t.amount} ${t.category} (${t.description})`);
+  }
+  compactStats.cats = {
+    in: ctx.categories.filter((c) => c.type === 'income').map((c) => c.name),
+    out: ctx.categories.filter((c) => c.type === 'expense').map((c) => c.name),
+  };
 
-PERSONALITY & TONE:
-- Smart, sincere, respectful, natural, and crisp (keep quick answers to 1-4 concise sentences; expand only when user asks for deep breakdown).
-- Format key numbers neatly with **bold** (e.g. **150 000 soʻm**). Avoid long robotic walls of text.
+  return `You are HISOBOT AI Assistant — a fast, warm, accurate personal finance advisor inside HISOBOT AI.
 
-LANGUAGE RULE:
-- Reply in the EXACT language the user writes/speaks in: Uzbek (Latin default, e.g. soʻm; or Cyrillic if Cyrillic), Russian, or English.
+STYLE & LANGUAGE:
+- Be concise and crisp (1-3 short sentences for quick answers; expand only if asked). Format money in **bold** (e.g. **150 000 soʻm**).
+- Reply in the EXACT language of the user's message: Uzbek (Latin default, soʻm), Russian, or English.
 
 DATA & TOOL RULES:
-- Use ONLY the authenticated user's verified snapshot below. NEVER invent numbers or transactions.
-- Answer general questions, balances, daily/weekly/monthly/yearly totals, advice, and forecasts DIRECTLY in a single fast turn using the snapshot below (only call \`get_financial_report\` when a dedicated structured period report table is clearly needed).
-- If the user logs an income or expense (e.g. "Bugun taksiga 35 ming sarfladim"), call \`propose_transaction\`.
-- If the user wants to set a category spending limit/budget, call \`propose_budget\`.
-- If the user wants to create a savings goal, call \`propose_goal\`.
-- Never claim a transaction, budget, or goal has been saved until the user confirms the proposal card.
+- Use ONLY the verified snapshot below. NEVER invent figures.
+- Answer balances, totals, advice, and comparisons DIRECTLY in one fast turn from the snapshot (call \`get_financial_report\` ONLY when user explicitly asks for a detailed period report table).
+- Call \`propose_transaction\` when user logs income/expense; \`propose_budget\` for limits; \`propose_goal\` for savings goals. Never claim saved before user confirms.
 
-AUTHENTICATED USER FINANCIAL SNAPSHOT:
+SNAPSHOT:
 ${JSON.stringify(compactStats)}`;
 }
 
@@ -1114,121 +1132,134 @@ export async function runGeminiAssistantTurn(params: {
   const systemInstruction = buildSystemInstruction(user, ctx);
   const contents = buildSanitizedContents(history, message);
 
-  try {
-    const response1 = await withTimeout(
-      client.models.generateContent({
-        model: GEMINI_MODEL,
-        contents,
-        config: {
-          systemInstruction,
-          thinkingConfig: {
-            thinkingLevel: ThinkingLevel.LOW,
-          },
-          tools: [{ functionDeclarations: assistantToolDeclarations }],
-        },
-      })
-    );
+  const modelCandidates: Array<{ model: string; thinkingLevel: ThinkingLevel }> = [
+    { model: GEMINI_FAST_MODEL, thinkingLevel: ThinkingLevel.MINIMAL },
+    { model: GEMINI_SECONDARY_MODEL, thinkingLevel: ThinkingLevel.LOW },
+  ];
 
-    const functionCalls = response1.functionCalls || [];
+  let lastErr: unknown = null;
 
-    if (functionCalls.length > 0) {
-      const firstCall = functionCalls[0];
-      const callName = firstCall.name || '';
-      const callArgs = (firstCall.args || {}) as Record<string, unknown>;
-
-      // Read-only reporting tool: execute immediately from cached ctx & run 2nd Gemini turn
-      if (callName === 'get_financial_report') {
-        const rawPeriod = String(callArgs.period || 'month');
-        const period: 'today' | 'week' | 'month' | 'year' =
-          rawPeriod === 'today' || rawPeriod === 'week' || rawPeriod === 'year' ? rawPeriod : 'month';
-        const focus = callArgs.focus ? String(callArgs.focus) : undefined;
-        const { structuredRows, reportData } = buildReportForPeriod(ctx, period, focus, detectedLang);
-
-        const modelContent = response1.candidates?.[0]?.content;
-        if (modelContent) {
-          const functionResponsePart: Part = {
-            functionResponse: {
-              id: firstCall.id,
-              name: callName,
-              response: { report: reportData },
+  for (const candidate of modelCandidates) {
+    try {
+      const response1 = await withTimeout(
+        client.models.generateContent({
+          model: candidate.model,
+          contents,
+          config: {
+            systemInstruction,
+            thinkingConfig: {
+              thinkingLevel: candidate.thinkingLevel,
             },
-          };
+            tools: [{ functionDeclarations: assistantToolDeclarations }],
+          },
+        })
+      );
 
-          const response2 = await withTimeout(
-            client.models.generateContent({
-              model: GEMINI_MODEL,
-              contents: [
-                ...contents,
-                modelContent,
-                { role: 'user', parts: [functionResponsePart] },
-              ],
-              config: {
-                systemInstruction,
-                thinkingConfig: {
-                  thinkingLevel: ThinkingLevel.LOW,
-                },
+      const functionCalls = response1.functionCalls || [];
+
+      if (functionCalls.length > 0) {
+        const firstCall = functionCalls[0];
+        const callName = firstCall.name || '';
+        const callArgs = (firstCall.args || {}) as Record<string, unknown>;
+
+        // Read-only reporting tool: execute immediately from cached ctx & run 2nd Gemini turn
+        if (callName === 'get_financial_report') {
+          const rawPeriod = String(callArgs.period || 'month');
+          const period: 'today' | 'week' | 'month' | 'year' =
+            rawPeriod === 'today' || rawPeriod === 'week' || rawPeriod === 'year' ? rawPeriod : 'month';
+          const focus = callArgs.focus ? String(callArgs.focus) : undefined;
+          const { structuredRows, reportData } = buildReportForPeriod(ctx, period, focus, detectedLang);
+
+          const modelContent = response1.candidates?.[0]?.content;
+          if (modelContent) {
+            const functionResponsePart: Part = {
+              functionResponse: {
+                id: firstCall.id,
+                name: callName,
+                response: { report: reportData },
               },
-            })
-          );
+            };
 
-          const finalText = response2.text?.trim() || response1.text?.trim() || '';
-          if (finalText) {
+            const response2 = await withTimeout(
+              client.models.generateContent({
+                model: candidate.model,
+                contents: [
+                  ...contents,
+                  modelContent,
+                  { role: 'user', parts: [functionResponsePart] },
+                ],
+                config: {
+                  systemInstruction,
+                  thinkingConfig: {
+                    thinkingLevel: candidate.thinkingLevel,
+                  },
+                },
+              })
+            );
+
+            const finalText = response2.text?.trim() || response1.text?.trim() || '';
+            if (finalText) {
+              return {
+                reply: finalText,
+                structuredRows,
+                source: 'gemini',
+              };
+            }
+          }
+
+          return {
+            reply:
+              detectedLang === 'ru'
+                ? 'Вот ваш актуальный финансовый отчёт за выбранный период:'
+                : detectedLang === 'en'
+                ? 'Here is your financial report for the requested period:'
+                : 'Tanlangan davr boʻyicha dolzarb moliyaviy hisobotingiz:',
+            structuredRows,
+            source: 'gemini',
+          };
+        }
+
+        // Mutating tools MUST NOT write to DB directly — always return proposal card
+        if (
+          callName === 'propose_transaction' ||
+          callName === 'propose_budget' ||
+          callName === 'propose_goal'
+        ) {
+          const proposedAction = sanitizeActionFromCall(callName, callArgs, ctx.categories);
+          if (proposedAction) {
+            const modelText = response1.text?.trim();
             return {
-              reply: finalText,
-              structuredRows,
+              reply: modelText || buildConfirmationPrompt(proposedAction, detectedLang),
+              proposedAction,
               source: 'gemini',
             };
           }
         }
-
-        return {
-          reply:
-            detectedLang === 'ru'
-              ? 'Вот ваш актуальный финансовый отчёт за выбранный период:'
-              : detectedLang === 'en'
-              ? 'Here is your financial report for the requested period:'
-              : 'Tanlangan davr boʻyicha dolzarb moliyaviy hisobotingiz:',
-          structuredRows,
-          source: 'gemini',
-        };
       }
 
-      // Mutating tools MUST NOT write to DB directly — always return proposal card
-      if (
-        callName === 'propose_transaction' ||
-        callName === 'propose_budget' ||
-        callName === 'propose_goal'
-      ) {
-        const proposedAction = sanitizeActionFromCall(callName, callArgs, ctx.categories);
-        if (proposedAction) {
-          const modelText = response1.text?.trim();
-          return {
-            reply: modelText || buildConfirmationPrompt(proposedAction, detectedLang),
-            proposedAction,
-            source: 'gemini',
-          };
-        }
+      const replyText = response1.text?.trim();
+      if (!replyText) {
+        throw new Error('EMPTY_GEMINI_RESPONSE');
       }
-    }
 
-    const replyText = response1.text?.trim();
-    if (!replyText) {
-      throw new Error('EMPTY_GEMINI_RESPONSE');
+      return {
+        reply: replyText,
+        source: 'gemini',
+      };
+    } catch (err: unknown) {
+      lastErr = err;
+      const safeErr = sanitizeErrorForLog(err);
+      lastGeminiDiagnostic = { error: safeErr, at: new Date().toISOString(), model: candidate.model };
+      console.error(`[HISOBOT AI] Gemini assistant error (${candidate.model}):`, safeErr);
     }
-
-    return {
-      reply: replyText,
-      source: 'gemini',
-    };
-  } catch (err: unknown) {
-    console.error('[HISOBOT AI] Gemini assistant error:', sanitizeErrorForLog(err));
-    return runFallbackAssistantTurn({
-      user,
-      message,
-      lang: detectedLang,
-      warning: buildFriendlyGeminiWarning(err, detectedLang),
-    });
   }
+
+  return runFallbackAssistantTurn({
+    user,
+    message,
+    lang: detectedLang,
+    warning: buildFriendlyGeminiWarning(lastErr, detectedLang),
+  });
 }
 
 export async function streamGeminiAssistantTurn(
@@ -1272,167 +1303,189 @@ export async function streamGeminiAssistantTurn(
   const contents = buildSanitizedContents(history, message);
 
   let streamedText = '';
+  let lastErr: unknown = null;
 
-  try {
-    const stream1 = await withTimeout(
-      client.models.generateContentStream({
-        model: GEMINI_MODEL,
-        contents,
-        config: {
-          systemInstruction,
-          thinkingConfig: {
-            thinkingLevel: ThinkingLevel.LOW,
-          },
-          tools: [{ functionDeclarations: assistantToolDeclarations }],
-        },
-      })
-    );
+  const modelCandidates: Array<{ model: string; thinkingLevel: ThinkingLevel }> = [
+    { model: GEMINI_FAST_MODEL, thinkingLevel: ThinkingLevel.MINIMAL },
+    { model: GEMINI_SECONDARY_MODEL, thinkingLevel: ThinkingLevel.LOW },
+  ];
 
-    const collectedCalls: FunctionCall[] = [];
-    let modelContent: Content | undefined;
+  for (const candidate of modelCandidates) {
+    if (signal?.aborted) break;
+    streamedText = '';
 
-    for await (const chunk of stream1) {
-      if (signal?.aborted) break;
-      if (chunk.functionCalls?.length) {
-        collectedCalls.push(...chunk.functionCalls);
-      }
-      if (!modelContent && chunk.candidates?.[0]?.content) {
-        modelContent = chunk.candidates[0].content;
-      } else if (modelContent && chunk.candidates?.[0]?.content?.parts?.length) {
-        modelContent = {
-          role: modelContent.role || 'model',
-          parts: [...(modelContent.parts || []), ...chunk.candidates[0].content.parts],
-        };
-      }
-      const delta = chunk.text;
-      if (delta) {
-        streamedText += delta;
-        callbacks.onDelta(delta);
-      }
-    }
-
-    if (collectedCalls.length > 0) {
-      const firstCall = collectedCalls[0];
-      const callName = firstCall.name || '';
-      const callArgs = (firstCall.args || {}) as Record<string, unknown>;
-
-      if (callName === 'get_financial_report') {
-        const rawPeriod = String(callArgs.period || 'month');
-        const period: 'today' | 'week' | 'month' | 'year' =
-          rawPeriod === 'today' || rawPeriod === 'week' || rawPeriod === 'year' ? rawPeriod : 'month';
-        const focus = callArgs.focus ? String(callArgs.focus) : undefined;
-        const { structuredRows, reportData } = buildReportForPeriod(ctx, period, focus, detectedLang);
-        callbacks.onRows?.(structuredRows);
-
-        if (modelContent) {
-          const functionResponsePart: Part = {
-            functionResponse: {
-              id: firstCall.id,
-              name: callName,
-              response: { report: reportData },
+    try {
+      const stream1 = await withTimeout(
+        client.models.generateContentStream({
+          model: candidate.model,
+          contents,
+          config: {
+            systemInstruction,
+            thinkingConfig: {
+              thinkingLevel: candidate.thinkingLevel,
             },
+            tools: [{ functionDeclarations: assistantToolDeclarations }],
+          },
+        })
+      );
+
+      const collectedCalls: FunctionCall[] = [];
+      let modelContent: Content | undefined;
+
+      for await (const chunk of stream1) {
+        if (signal?.aborted) break;
+        if (chunk.functionCalls?.length) {
+          collectedCalls.push(...chunk.functionCalls);
+        }
+        if (!modelContent && chunk.candidates?.[0]?.content) {
+          modelContent = chunk.candidates[0].content;
+        } else if (modelContent && chunk.candidates?.[0]?.content?.parts?.length) {
+          modelContent = {
+            role: modelContent.role || 'model',
+            parts: [...(modelContent.parts || []), ...chunk.candidates[0].content.parts],
           };
+        }
+        const delta = chunk.text;
+        if (delta) {
+          streamedText += delta;
+          callbacks.onDelta(delta);
+        }
+      }
 
-          const stream2 = await withTimeout(
-            client.models.generateContentStream({
-              model: GEMINI_MODEL,
-              contents: [
-                ...contents,
-                modelContent,
-                { role: 'user', parts: [functionResponsePart] },
-              ],
-              config: {
-                systemInstruction,
-                thinkingConfig: {
-                  thinkingLevel: ThinkingLevel.LOW,
-                },
+      if (collectedCalls.length > 0) {
+        const firstCall = collectedCalls[0];
+        const callName = firstCall.name || '';
+        const callArgs = (firstCall.args || {}) as Record<string, unknown>;
+
+        if (callName === 'get_financial_report') {
+          const rawPeriod = String(callArgs.period || 'month');
+          const period: 'today' | 'week' | 'month' | 'year' =
+            rawPeriod === 'today' || rawPeriod === 'week' || rawPeriod === 'year' ? rawPeriod : 'month';
+          const focus = callArgs.focus ? String(callArgs.focus) : undefined;
+          const { structuredRows, reportData } = buildReportForPeriod(ctx, period, focus, detectedLang);
+          callbacks.onRows?.(structuredRows);
+
+          if (modelContent) {
+            const functionResponsePart: Part = {
+              functionResponse: {
+                id: firstCall.id,
+                name: callName,
+                response: { report: reportData },
               },
-            })
-          );
+            };
 
-          let turn2Text = '';
-          if (streamedText.trim()) {
-            callbacks.onDelta('\n');
-            streamedText += '\n';
-          }
-          for await (const chunk of stream2) {
-            if (signal?.aborted) break;
-            const delta = chunk.text;
-            if (delta) {
-              turn2Text += delta;
-              streamedText += delta;
-              callbacks.onDelta(delta);
+            const stream2 = await withTimeout(
+              client.models.generateContentStream({
+                model: candidate.model,
+                contents: [
+                  ...contents,
+                  modelContent,
+                  { role: 'user', parts: [functionResponsePart] },
+                ],
+                config: {
+                  systemInstruction,
+                  thinkingConfig: {
+                    thinkingLevel: candidate.thinkingLevel,
+                  },
+                },
+              })
+            );
+
+            let turn2Text = '';
+            if (streamedText.trim()) {
+              callbacks.onDelta('\n');
+              streamedText += '\n';
+            }
+            for await (const chunk of stream2) {
+              if (signal?.aborted) break;
+              const delta = chunk.text;
+              if (delta) {
+                turn2Text += delta;
+                streamedText += delta;
+                callbacks.onDelta(delta);
+              }
+            }
+
+            if (turn2Text.trim() || streamedText.trim()) {
+              return {
+                reply: streamedText.trim(),
+                structuredRows,
+                source: 'gemini',
+              };
             }
           }
 
-          if (turn2Text.trim() || streamedText.trim()) {
+          const fallbackReportReply =
+            detectedLang === 'ru'
+              ? 'Вот ваш актуальный финансовый отчёт за выбранный период:'
+              : detectedLang === 'en'
+              ? 'Here is your financial report for the requested period:'
+              : 'Tanlangan davr boʻyicha dolzarb moliyaviy hisobotingiz:';
+          if (!streamedText.trim()) {
+            callbacks.onDelta(fallbackReportReply);
+          }
+          return {
+            reply: streamedText.trim() || fallbackReportReply,
+            structuredRows,
+            source: 'gemini',
+          };
+        }
+
+        if (
+          callName === 'propose_transaction' ||
+          callName === 'propose_budget' ||
+          callName === 'propose_goal'
+        ) {
+          const proposedAction = sanitizeActionFromCall(callName, callArgs, ctx.categories);
+          if (proposedAction) {
+            const promptText = streamedText.trim() || buildConfirmationPrompt(proposedAction, detectedLang);
+            if (!streamedText.trim()) {
+              callbacks.onDelta(promptText);
+            }
             return {
-              reply: streamedText.trim(),
-              structuredRows,
+              reply: promptText,
+              proposedAction,
               source: 'gemini',
             };
           }
         }
+      }
 
-        const fallbackReportReply =
-          detectedLang === 'ru'
-            ? 'Вот ваш актуальный финансовый отчёт за выбранный период:'
-            : detectedLang === 'en'
-            ? 'Here is your financial report for the requested period:'
-            : 'Tanlangan davr boʻyicha dolzarb moliyaviy hisobotingiz:';
-        if (!streamedText.trim()) {
-          callbacks.onDelta(fallbackReportReply);
-        }
+      const finalReply = streamedText.trim();
+      if (!finalReply) {
+        throw new Error('EMPTY_GEMINI_RESPONSE');
+      }
+
+      return {
+        reply: finalReply,
+        source: 'gemini',
+      };
+    } catch (err: unknown) {
+      lastErr = err;
+      const safeErr = sanitizeErrorForLog(err);
+      lastGeminiDiagnostic = { error: safeErr, at: new Date().toISOString(), model: candidate.model };
+      console.error(`[HISOBOT AI] Gemini streaming error (${candidate.model}):`, safeErr);
+      if (streamedText.trim()) {
+        // Partial Gemini text already streamed; finish cleanly instead of mixing fallback
         return {
-          reply: streamedText.trim() || fallbackReportReply,
-          structuredRows,
+          reply: streamedText.trim(),
           source: 'gemini',
         };
       }
-
-      if (
-        callName === 'propose_transaction' ||
-        callName === 'propose_budget' ||
-        callName === 'propose_goal'
-      ) {
-        const proposedAction = sanitizeActionFromCall(callName, callArgs, ctx.categories);
-        if (proposedAction) {
-          const promptText = streamedText.trim() || buildConfirmationPrompt(proposedAction, detectedLang);
-          if (!streamedText.trim()) {
-            callbacks.onDelta(promptText);
-          }
-          return {
-            reply: promptText,
-            proposedAction,
-            source: 'gemini',
-          };
-        }
-      }
     }
-
-    const finalReply = streamedText.trim();
-    if (!finalReply) {
-      throw new Error('EMPTY_GEMINI_RESPONSE');
-    }
-
-    return {
-      reply: finalReply,
-      source: 'gemini',
-    };
-  } catch (err: unknown) {
-    console.error('[HISOBOT AI] Gemini streaming error:', sanitizeErrorForLog(err));
-    const fallback = await runFallbackAssistantTurn({
-      user,
-      message,
-      lang: detectedLang,
-      warning: buildFriendlyGeminiWarning(err, detectedLang),
-    });
-    if (fallback.structuredRows) callbacks.onRows?.(fallback.structuredRows);
-    if (!streamedText.trim() && fallback.reply) {
-      callbacks.onDelta(fallback.reply);
-    }
-    return fallback;
   }
+
+  const fallback = await runFallbackAssistantTurn({
+    user,
+    message,
+    lang: detectedLang,
+    warning: buildFriendlyGeminiWarning(lastErr, detectedLang),
+  });
+  if (fallback.structuredRows) callbacks.onRows?.(fallback.structuredRows);
+  if (!streamedText.trim() && fallback.reply) {
+    callbacks.onDelta(fallback.reply);
+  }
+  return fallback;
 }
 
 export async function parseTransactionWithGemini(
@@ -1541,10 +1594,10 @@ export async function parseReceiptWithGemini(
 
     const response = await withTimeout(
       client.models.generateContent({
-        model: GEMINI_MODEL,
+        model: GEMINI_FAST_MODEL,
         contents: parts,
         config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
           responseMimeType: 'application/json',
           responseSchema: {
             type: Type.OBJECT,
@@ -1570,7 +1623,7 @@ export async function parseReceiptWithGemini(
           },
         },
       }),
-      18_000
+      10_000
     );
 
     const raw = response.text?.trim();

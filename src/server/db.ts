@@ -909,7 +909,20 @@ class Database {
     if (typeof updates.fullName === 'string' && updates.fullName.trim()) {
       user.fullName = updates.fullName.trim();
     }
-    if (typeof updates.avatarUrl === 'string') user.avatarUrl = updates.avatarUrl;
+    if (typeof updates.avatarUrl === 'string') {
+      const nextAvatar = updates.avatarUrl.trim();
+      const isSafeAvatar =
+        nextAvatar === '' ||
+        (nextAvatar.length <= 450_000 &&
+          (nextAvatar.startsWith('/assets/') ||
+            nextAvatar.startsWith('/src/assets/') ||
+            /^https?:\/\//i.test(nextAvatar) ||
+            /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(nextAvatar)));
+      if (!isSafeAvatar) {
+        throw new Error('Profil rasmi formati notoʻgʻri yoki hajmi juda katta');
+      }
+      user.avatarUrl = nextAvatar || '/src/assets/images/avatar_user_profile_1794280921902.jpg';
+    }
     if (updates.currency !== undefined) user.currency = updates.currency;
     if (updates.theme === 'light' || updates.theme === 'dark') user.theme = updates.theme;
     if (updates.monthlyBudget !== undefined) {
