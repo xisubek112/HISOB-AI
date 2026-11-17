@@ -11,7 +11,9 @@ import {
   Printer,
   Calendar,
   BarChart3,
+  Lock,
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext.tsx';
 import { FinancialSummary, Transaction } from '../../types/finance.ts';
 import { api } from '../../services/api.ts';
 import { formatMoney, getTodayDateString } from '../../utils/formatters.ts';
@@ -32,6 +34,7 @@ import {
 } from '../../design-system/index.ts';
 
 export const ReportsView: React.FC = () => {
+  const { user, loading: authLoading } = useAuth();
   const toast = useToast();
   const [period, setPeriod] = useState<string>('this_month');
   const [startDate, setStartDate] = useState<string>(getTodayDateString());
@@ -44,6 +47,14 @@ export const ReportsView: React.FC = () => {
   const [categoryViewType, setCategoryViewType] = useState<'donut' | 'list'>('donut');
 
   const fetchReport = useCallback(async () => {
+    if (authLoading) return;
+    if (!user) {
+      setSummary(null);
+      setTransactions([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const res = await api.getSummary({
@@ -64,7 +75,7 @@ export const ReportsView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [period, startDate, endDate, toast]);
+  }, [authLoading, user, period, startDate, endDate, toast]);
 
   useEffect(() => {
     fetchReport();
@@ -83,7 +94,7 @@ export const ReportsView: React.FC = () => {
 
   // Export as Multi-sheet Excel (XLSX)
   const exportToExcel = async () => {
-    if (!summary) return;
+    if (!summary || !user) return;
 
     try {
       setExportingExcel(true);
@@ -259,6 +270,18 @@ export const ReportsView: React.FC = () => {
   const exportToPDF = () => {
     window.print();
   };
+
+  if (!authLoading && !user) {
+    return (
+      <Card padding="lg">
+        <EmptyState
+          icon={<Lock className="w-6 h-6" />}
+          title="Hisobotlarni koʻrish uchun tizimga kiring"
+          description="Moliyaviy hisobotlar, grafiklar va Excel/CSV eksport funksiyalari hisobingizga kirganingizdan soʻng ochiladi."
+        />
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">

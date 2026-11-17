@@ -14,6 +14,7 @@ Supabase SQL Editor yoki `psql "$DATABASE_URL"` orqali migratsiyalarni **qatʼiy
 4. `supabase/migrations/202611130004_recurring_transactions.sql` — `hisobot_execute_recurring_schedule`.
 5. `supabase/migrations/202611130005_atomic_user_registration.sql` — `hisobot_register_user_atomic` va oilaviy indeks/qidiruv indekslari.
 6. `supabase/migrations/202611130006_dual_starter_wallets_and_idempotency_locks.sql` — roʻyxatdan oʻtishda 2 ta boshlangʻich hamyon (`Asosiy karta` + `Naqd pul`) yaratish va parallel idempotency kalitlari uchun `pg_advisory_xact_lock` himoyasi.
+7. `supabase/migrations/202611170001_admin_telemetry_and_audit.sql` — `admin_audit_logs`, `ai_usage_events`, `api_error_events`, `subscription_events`, `app_runtime_config` jadvallari (RLS + least-privilege `service_role`).
 
 Tekshirish (faqat alohida disposable test bazasida — `DATABASE_URL` ga fallback qilmaydi):
 ```bash
@@ -66,6 +67,8 @@ Render Dashboard → Service → **Environment** boʻlimida faqat server tomonda
 | `SESSION_TTL_DAYS` | `30` | Sessiya amal qilish muddati |
 | `ALLOWED_ORIGINS` | `https://<render-app>.onrender.com` | Capacitor (`capacitor://localhost`, `https://localhost`) avtomatik ruxsat etilgan |
 | `GEMINI_API_KEY` | Gemini API kaliti | AI Yordamchi uchun |
+| `ADMIN_EMAIL` | `xisugamer@gmail.com` | Yagona rasmiy Super Admin emaili (faqat server tomonda; boʻsh boʻlsa `/admin` yopiq qoladi) |
+| `ADMIN_ACCESS_CODE` | Kamida 6 belgili maxfiy kod | Admin paneliga kirish uchun alohida 2-bosqichli maxfiy kod (faqat server tomonda) |
 | `ENABLE_DEMO_SEED` | `false` | Productionda qatʼiyan `false` |
 
 ---

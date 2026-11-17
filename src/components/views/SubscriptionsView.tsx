@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { Subscription, BillingInterval, SubscriptionStatus, CurrencyCode } from '../../types/finance.ts';
 import { api } from '../../services/api.ts';
-import { formatMoney, formatDateUz } from '../../utils/formatters.ts';
+import { DEFAULT_EXCHANGE_RATES, formatMoney, formatDateUz } from '../../utils/formatters.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 import {
   Badge,
@@ -169,10 +169,8 @@ export const SubscriptionsView: React.FC = () => {
     if (s.billingInterval === 'quarterly') monthlyAmount = s.amount / 3;
     if (s.billingInterval === 'weekly') monthlyAmount = s.amount * 4.33;
 
-    if (s.currency === 'USD') return acc + monthlyAmount * 12850;
-    if (s.currency === 'EUR') return acc + monthlyAmount * 13950;
-    if (s.currency === 'RUB') return acc + monthlyAmount * 138;
-    return acc + monthlyAmount;
+    const rate = DEFAULT_EXCHANGE_RATES[s.currency] || 1;
+    return acc + monthlyAmount * rate;
   }, 0);
 
   const annualTotalUZS = monthlyTotalUZS * 12;

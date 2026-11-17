@@ -95,6 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (res.user.theme) applyTheme(res.user.theme);
     } catch (e) {
       console.warn('Demo login failed:', e);
+      throw e;
     }
   };
 

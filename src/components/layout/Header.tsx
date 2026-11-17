@@ -14,6 +14,7 @@ import {
   ChevronDown,
   CheckCheck,
   ChartNoAxesCombined,
+  ShieldCheck,
   X,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.tsx';
@@ -76,6 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
     budgets: 'Budjetlar',
     goals: 'Maqsadlar',
     debts: 'Qarzlar daftari',
+    admin: 'Super Admin Panel',
   };
 
   const now = new Date();
@@ -120,6 +122,10 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   useEffect(() => {
+    if (!user) {
+      setNotifications([]);
+      return;
+    }
     loadNotifications();
     const interval = setInterval(loadNotifications, 30000);
     return () => clearInterval(interval);
@@ -163,13 +169,21 @@ export const Header: React.FC<HeaderProps> = ({
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   const handleMarkAllRead = async () => {
-    await api.markAllNotificationsRead();
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    try {
+      await api.markAllNotificationsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    } catch {
+      // ignore transient error
+    }
   };
 
   const handleMarkOneRead = async (id: string, linkTab?: string) => {
-    await api.markNotificationRead(id);
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
+    try {
+      await api.markNotificationRead(id);
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
+    } catch {
+      // ignore transient error
+    }
     if (linkTab) {
       onNavigateTab(linkTab as NavTab);
       setShowNotifMenu(false);
@@ -203,7 +217,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="truncate text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
               <span>{currentTab === 'dashboard' ? 'HISOBOT AI' : tabTitles[currentTab]}</span>
               <span className="rounded-md border border-emerald-500/40 dark:border-emerald-400/40 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
-                {user?.isPremium ? 'PREMIUM' : 'PRO'}
+                {user?.isPremium ? (user.premiumPlan === 'business' ? 'BUSINESS' : 'PRO') : 'BEPUL'}
               </span>
             </div>
             <div className="truncate text-[11px] text-slate-500 dark:text-slate-400">
@@ -213,8 +227,25 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
       </div>
 
-      {/* Right Controls: Search, Bell, Theme Toggle, Period Selector */}
+      {/* Right Controls: Admin Shortcut, Search, Bell, Theme Toggle, Period Selector */}
       <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+        {user?.isSuperAdmin === true && (
+          <button
+            type="button"
+            onClick={() => onNavigateTab(currentTab === 'admin' ? 'dashboard' : 'admin')}
+            aria-label={currentTab === 'admin' ? 'Ilovaga qaytish' : 'Admin Panel'}
+            title={currentTab === 'admin' ? 'Ilovaga qaytish' : 'Super Admin Panel'}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+              currentTab === 'admin'
+                ? 'border-emerald-500 bg-emerald-500 text-[#05251D]'
+                : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20'
+            }`}
+          >
+            <ShieldCheck size={16} className="shrink-0" />
+            <span className="hidden sm:inline">Admin Panel</span>
+          </button>
+        )}
+
         {/* Search Popover */}
         <div className="relative" ref={searchRef}>
           <button

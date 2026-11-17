@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useRef } from 'react';
 import { CheckCircle2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
 import { Modal } from './Modal.tsx';
 import { Button } from './Button.tsx';
@@ -96,14 +96,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     if (resolver) resolver(accepted);
   };
 
-  const value: ToastContextValue = {
-    showToast,
-    success: (m, t) => showToast(m, 'success', t),
-    error: (m, t) => showToast(m, 'error', t),
-    warning: (m, t) => showToast(m, 'warning', t),
-    info: (m, t) => showToast(m, 'info', t),
-    confirm,
-  };
+  const value = useMemo<ToastContextValue>(
+    () => ({
+      showToast,
+      success: (m, t) => showToast(m, 'success', t),
+      error: (m, t) => showToast(m, 'error', t),
+      warning: (m, t) => showToast(m, 'warning', t),
+      info: (m, t) => showToast(m, 'info', t),
+      confirm,
+    }),
+    [showToast, confirm]
+  );
 
   return (
     <ToastContext.Provider value={value}>

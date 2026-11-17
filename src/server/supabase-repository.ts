@@ -5,6 +5,16 @@
 
 import crypto from 'crypto';
 import type {
+  AdminAiAnalyticsData,
+  AdminAuditLog,
+  AdminOverviewData,
+  AdminRevenueData,
+  AdminSubscriptionsData,
+  AdminSystemHealthData,
+  AdminUserSummary,
+  AiUsageEvent,
+  ApiErrorEvent,
+  AppRuntimeConfig,
   BankConnection,
   BankSyncLog,
   Budget,
@@ -21,6 +31,7 @@ import type {
   RecurringTransaction,
   ScannedReceipt,
   Subscription,
+  SubscriptionEvent,
   TelegramConnection,
   Transaction,
   UserProfile,
@@ -34,6 +45,16 @@ import {
   getCurrentTimeString,
   getTodayDateString,
 } from '../utils/formatters.ts';
+import {
+  DEFAULT_APP_RUNTIME_CONFIG,
+  buildAdminAiAnalyticsData,
+  buildAdminOverviewData,
+  buildAdminRevenueData,
+  buildAdminSubscriptionsData,
+  buildAdminSystemHealthData,
+  sanitizeRuntimeConfigUpdate,
+} from './admin-analytics.ts';
+import { isVerifiedSuperAdminUser } from './admin-policy.ts';
 import type { AsyncFinanceRepository, RepositoryHealth } from './async-repository.ts';
 import { SupabaseAuthService } from './supabase-auth.ts';
 import type { PostgresStorage } from './supabase-storage.ts';
@@ -598,17 +619,22 @@ export class SupabaseRepository implements AsyncFinanceRepository {
   }
 
   async addWallet(userId: string, wallet: Omit<Wallet, 'id' | 'userId' | 'createdAt'>): Promise<Wallet> {
-    const balance = Number(wallet.balance ?? 0);
+    const balance = Math.round(Number(wallet.balance ?? 0));
     if (!Number.isFinite(balance) || balance < 0) {
       throw new Error('Hamyon balansi manfiy boʻlishi yoki notoʻgʻri boʻlishi mumkin emas');
     }
     const id = `wallet_${crypto.randomUUID()}`;
     const newWallet: Wallet = {
-      ...wallet,
       id,
       userId,
-      balance: Math.round(balance),
+      name: String(wallet.name || 'Yangi hamyon').trim(),
+      type: wallet.type || 'card',
       currency: wallet.currency || 'UZS',
+      balance,
+      color: wallet.color || '#10B981',
+      icon: wallet.icon,
+      accountNumber: wallet.accountNumber,
+      isArchived: Boolean(wallet.isArchived),
       createdAt: new Date().toISOString(),
     };
     return this.upsertUserRecord(userId, 'wallets', userId, id, newWallet);
@@ -628,10 +654,15 @@ export class SupabaseRepository implements AsyncFinanceRepository {
       if (!Number.isFinite(nextBalance) || nextBalance < 0) {
         throw new Error('Hamyon balansi manfiy boʻlishi mumkin emas');
       }
-      const { id: _i, userId: _u, createdAt: _c, ...safeUpdates } = updates;
       const updated: Wallet = {
         ...cur,
-        ...safeUpdates,
+        ...(typeof updates.name === 'string' && updates.name.trim() ? { name: updates.name.trim() } : {}),
+        ...(updates.type !== undefined ? { type: updates.type } : {}),
+        ...(updates.currency !== undefined ? { currency: updates.currency } : {}),
+        ...(updates.color !== undefined ? { color: updates.color } : {}),
+        ...(updates.icon !== undefined ? { icon: updates.icon } : {}),
+        ...(updates.accountNumber !== undefined ? { accountNumber: updates.accountNumber } : {}),
+        ...(updates.isArchived !== undefined ? { isArchived: Boolean(updates.isArchived) } : {}),
         balance: nextBalance,
       };
       await client.query(
@@ -1016,11 +1047,22 @@ export class SupabaseRepository implements AsyncFinanceRepository {
       );
       if (!existing.rows[0]) throw new Error('Obuna topilmadi');
       const cur = existing.rows[0].payload;
-      const { id: _i, userId: _u, createdAt: _c, ...safeUpdates } = updates;
+      const nextAmount = updates.amount !== undefined ? Math.round(Number(updates.amount)) : cur.amount;
+      if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+        throw new Error('Obuna summasi noldan katta boʻlishi kerak');
+      }
       const updated: Subscription = {
         ...cur,
-        ...safeUpdates,
-        amount: updates.amount !== undefined ? Math.round(Number(updates.amount)) : cur.amount,
+        ...(typeof updates.serviceName === 'string' && updates.serviceName.trim()
+          ? { serviceName: updates.serviceName.trim() }
+          : {}),
+        ...(updates.currency !== undefined ? { currency: updates.currency } : {}),
+        ...(updates.billingInterval !== undefined ? { billingInterval: updates.billingInterval } : {}),
+        ...(updates.nextPaymentDate !== undefined ? { nextPaymentDate: updates.nextPaymentDate } : {}),
+        ...(updates.categoryName !== undefined ? { categoryName: updates.categoryName } : {}),
+        ...(updates.status !== undefined ? { status: updates.status } : {}),
+        ...(updates.notes !== undefined ? { notes: updates.notes } : {}),
+        amount: nextAmount,
       };
       await client.query(
         `UPDATE public.app_data SET payload = $1::jsonb, updated_at = now()
@@ -1240,7 +1282,7 @@ export class SupabaseRepository implements AsyncFinanceRepository {
               userId,
               JSON.stringify({
                 ...t,
-                categoryId: 'exp_food',
+                categoryId: t.categoryName.includes('Transport') ? 'exp_transport' : 'exp_food',
                 time: getCurrentTimeString(),
                 notes: `${bank.bankName} sinxronizatsiyasi orqali import qilindi`,
                 createdAt: new Date().toISOString(),
@@ -1358,5 +1400,733 @@ export class SupabaseRepository implements AsyncFinanceRepository {
       result: Math.round(result * 100) / 100,
       rate: Math.round(directRate * 10000) / 10000,
     };
+  }
+
+  // ==========================================
+  // --- 9. SUPER ADMIN, TELEMETRY & CONFIG ---
+  // ==========================================
+  async recordAiUsageEvent(event: Omit<AiUsageEvent, 'id' | 'createdAt'>): Promise<AiUsageEvent> {
+    const id = `ai_ev_${crypto.randomUUID()}`;
+    const createdAt = new Date().toISOString();
+    await this.storage.query(
+      `INSERT INTO public.ai_usage_events (
+         id, user_id, endpoint, model, source, status, latency_ms, prompt_chars, completion_chars, language, error_code, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::timestamptz)`,
+      [
+        id,
+        event.userId || null,
+        event.endpoint,
+        event.model,
+        event.source,
+        event.status,
+        Math.max(0, Math.round(Number(event.latencyMs) || 0)),
+        Math.max(0, Math.round(Number(event.promptChars) || 0)),
+        Math.max(0, Math.round(Number(event.completionChars) || 0)),
+        event.language || 'uz',
+        event.errorCode || null,
+        createdAt,
+      ],
+      { label: 'record_ai_usage_event' }
+    );
+    return { ...event, id, createdAt };
+  }
+
+  async recordApiErrorEvent(event: Omit<ApiErrorEvent, 'id' | 'createdAt'>): Promise<ApiErrorEvent> {
+    const id = `err_ev_${crypto.randomUUID()}`;
+    const createdAt = new Date().toISOString();
+    await this.storage.query(
+      `INSERT INTO public.api_error_events (
+         id, method, path, status_code, error_message, user_id, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz)`,
+      [
+        id,
+        event.method,
+        event.path,
+        Math.round(Number(event.statusCode) || 500),
+        String(event.errorMessage || 'Unknown error').slice(0, 300),
+        event.userId || null,
+        createdAt,
+      ],
+      { label: 'record_api_error_event' }
+    );
+    return { ...event, id, createdAt };
+  }
+
+  async getAppConfig(): Promise<AppRuntimeConfig> {
+    const res = await this.storage.query<{ config_value: AppRuntimeConfig }>(
+      `SELECT config_value FROM public.app_runtime_config WHERE config_key = 'runtime' LIMIT 1`,
+      [],
+      { retryable: true, label: 'get_app_config' }
+    );
+    return {
+      ...DEFAULT_APP_RUNTIME_CONFIG,
+      ...(res.rows[0]?.config_value || {}),
+    };
+  }
+
+  async updateAppConfig(updates: Partial<AppRuntimeConfig>, updatedBy: string): Promise<AppRuntimeConfig> {
+    return this.storage.withTransaction(async (client) => {
+      const existing = await client.query<{ config_value: AppRuntimeConfig }>(
+        `SELECT config_value FROM public.app_runtime_config WHERE config_key = 'runtime' FOR UPDATE`
+      );
+      const current: AppRuntimeConfig = {
+        ...DEFAULT_APP_RUNTIME_CONFIG,
+        ...(existing.rows[0]?.config_value || {}),
+      };
+      const next = sanitizeRuntimeConfigUpdate(current, updates, updatedBy);
+      await client.query(
+        `INSERT INTO public.app_runtime_config (config_key, config_value, updated_by, updated_at)
+         VALUES ('runtime', $1::jsonb, $2, now())
+         ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+        [JSON.stringify(next), updatedBy]
+      );
+      return next;
+    });
+  }
+
+  async addAdminAuditLog(entry: Omit<AdminAuditLog, 'id' | 'createdAt'>): Promise<AdminAuditLog> {
+    const id = `aud_${crypto.randomUUID()}`;
+    const createdAt = new Date().toISOString();
+    await this.storage.query(
+      `INSERT INTO public.admin_audit_logs (
+         id, admin_user_id, admin_email, action, target_type, target_id, reason, metadata, ip_address, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10::timestamptz)`,
+      [
+        id,
+        entry.adminUserId,
+        entry.adminEmail,
+        entry.action,
+        entry.targetType,
+        entry.targetId,
+        entry.reason,
+        JSON.stringify(entry.metadata || {}),
+        entry.ipAddress || null,
+        createdAt,
+      ],
+      { label: 'add_admin_audit_log' }
+    );
+    return { ...entry, id, createdAt };
+  }
+
+  async listAdminAuditLogs(params: {
+    action?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ logs: AdminAuditLog[]; total: number; page: number; limit: number }> {
+    const safeLimit = Math.min(50, Math.max(1, Math.round(Number(params.limit) || 20)));
+    const safePage = Math.max(1, Math.round(Number(params.page) || 1));
+    const offset = (safePage - 1) * safeLimit;
+
+    const whereParts: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (params.action && params.action !== 'all') {
+      whereParts.push(`action = $${idx++}`);
+      values.push(params.action);
+    }
+    if (params.search && params.search.trim()) {
+      whereParts.push(
+        `(admin_email ILIKE $${idx} OR action ILIKE $${idx} OR target_id ILIKE $${idx} OR reason ILIKE $${idx})`
+      );
+      values.push(`%${params.search.trim()}%`);
+      idx++;
+    }
+
+    const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
+    const countRes = await this.storage.query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM public.admin_audit_logs ${whereSql}`,
+      values,
+      { retryable: true, label: 'count_admin_audit_logs' }
+    );
+    const total = Number(countRes.rows[0]?.total || 0);
+
+    const rowsRes = await this.storage.query<{
+      id: string;
+      admin_user_id: string;
+      admin_email: string;
+      action: string;
+      target_type: AdminAuditLog['targetType'];
+      target_id: string;
+      reason: string;
+      metadata: Record<string, unknown> | null;
+      ip_address: string | null;
+      created_at: Date | string;
+    }>(
+      `SELECT id, admin_user_id, admin_email, action, target_type, target_id, reason, metadata, ip_address, created_at
+         FROM public.admin_audit_logs
+         ${whereSql}
+        ORDER BY created_at DESC
+        LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...values, safeLimit, offset],
+      { retryable: true, label: 'list_admin_audit_logs' }
+    );
+
+    const logs: AdminAuditLog[] = rowsRes.rows.map((r) => ({
+      id: r.id,
+      adminUserId: r.admin_user_id,
+      adminEmail: r.admin_email,
+      action: r.action,
+      targetType: r.target_type,
+      targetId: r.target_id,
+      reason: r.reason,
+      metadata: r.metadata || undefined,
+      ipAddress: r.ip_address || undefined,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    }));
+
+    return { logs, total, page: safePage, limit: safeLimit };
+  }
+
+  private async loadAllAdminUserSummaries(): Promise<AdminUserSummary[]> {
+    const res = await this.storage.query<{
+      id: string;
+      email: string;
+      profile: UserProfile;
+      created_at: Date | string;
+      tx_count: string;
+      sessions_count: string;
+    }>(
+      `SELECT u.id,
+              u.email,
+              u.profile,
+              u.created_at,
+              coalesce(tx.cnt, 0)::text AS tx_count,
+              coalesce(sess.cnt, 0)::text AS sessions_count
+         FROM public.app_users u
+         LEFT JOIN (
+           SELECT owner_user_id, count(*) AS cnt
+             FROM public.app_data
+            WHERE collection = 'transactions'
+            GROUP BY owner_user_id
+         ) tx ON tx.owner_user_id = u.id
+         LEFT JOIN (
+           SELECT user_id, count(*) AS cnt
+             FROM public.app_sessions
+            WHERE expires_at > now()
+            GROUP BY user_id
+         ) sess ON sess.user_id = u.id
+        ORDER BY u.created_at DESC`,
+      [],
+      { retryable: true, label: 'load_all_admin_users' }
+    );
+
+    return res.rows.map((r) => {
+      const p = r.profile || ({} as UserProfile);
+      const isPrem = Boolean(p.isPremium);
+      const plan: 'free' | 'pro' | 'business' =
+        isPrem && (p.premiumPlan === 'pro' || p.premiumPlan === 'business') ? p.premiumPlan : 'free';
+      const createdAt =
+        p.createdAt || (r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at));
+      return {
+        id: r.id,
+        email: r.email,
+        fullName: p.fullName || r.email,
+        avatarUrl: p.avatarUrl,
+        currency: p.currency || 'UZS',
+        isPremium: isPrem,
+        premiumPlan: plan,
+        premiumExpiresAt: p.premiumExpiresAt,
+        isSuspended: Boolean(p.isSuspended),
+        isSuperAdmin: isVerifiedSuperAdminUser({ id: r.id, email: r.email }),
+        createdAt,
+        lastActiveAt: p.lastActiveAt || createdAt,
+        transactionCount: Number(r.tx_count || 0),
+        activeSessionsCount: Number(r.sessions_count || 0),
+      };
+    });
+  }
+
+  async listAdminUsers(params: {
+    search?: string;
+    plan?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ users: AdminUserSummary[]; total: number; page: number; limit: number }> {
+    const safeLimit = Math.min(50, Math.max(1, Math.round(Number(params.limit) || 20)));
+    const safePage = Math.max(1, Math.round(Number(params.page) || 1));
+
+    let list = await this.loadAllAdminUserSummaries();
+
+    if (params.search && params.search.trim()) {
+      const q = params.search.trim().toLowerCase();
+      list = list.filter(
+        (u) =>
+          u.fullName.toLowerCase().includes(q) ||
+          u.email.toLowerCase().includes(q) ||
+          u.id.toLowerCase().includes(q)
+      );
+    }
+    if (params.plan && params.plan !== 'all') {
+      list = list.filter((u) => u.premiumPlan === params.plan);
+    }
+    if (params.status === 'active') {
+      list = list.filter((u) => !u.isSuspended);
+    } else if (params.status === 'suspended') {
+      list = list.filter((u) => u.isSuspended);
+    } else if (params.status === 'admin') {
+      list = list.filter((u) => u.isSuperAdmin);
+    }
+
+    const start = (safePage - 1) * safeLimit;
+    return {
+      users: list.slice(start, start + safeLimit),
+      total: list.length,
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
+  async adminUpdateUserSubscription(params: {
+    adminUser: UserProfile;
+    targetUserId: string;
+    plan: 'free' | 'pro' | 'business';
+    durationMonths: number;
+    reason: string;
+    ipAddress?: string;
+  }): Promise<{ user: AdminUserSummary; subscriptionEvent: SubscriptionEvent; auditLog: AdminAuditLog }> {
+    const cfg = await this.getAppConfig();
+    const safeMonths = params.plan === 'free' ? 0 : Math.min(36, Math.max(1, Math.round(params.durationMonths || 1)));
+
+    const subEventId = `sub_ev_${crypto.randomUUID()}`;
+    const audId = `aud_${crypto.randomUUID()}`;
+    const nowIso = new Date().toISOString();
+
+    const { subscriptionEvent, auditLog } = await this.storage.withTransaction(async (client) => {
+      const userRes = await client.query<{ id: string; email: string; profile: UserProfile }>(
+        `SELECT id, email, profile FROM public.app_users WHERE id = $1 FOR UPDATE`,
+        [params.targetUserId]
+      );
+      const targetRow = userRes.rows[0];
+      if (!targetRow) throw new Error('Foydalanuvchi topilmadi');
+
+      const curProfile = { ...(targetRow.profile || {}) } as UserProfile;
+      const previousPlan: 'free' | 'pro' | 'business' =
+        curProfile.isPremium && (curProfile.premiumPlan === 'pro' || curProfile.premiumPlan === 'business')
+          ? curProfile.premiumPlan
+          : 'free';
+
+      let expiresAt: string | undefined;
+      if (params.plan === 'free') {
+        curProfile.isPremium = false;
+        curProfile.premiumPlan = 'free';
+        delete curProfile.premiumExpiresAt;
+      } else {
+        const d = new Date();
+        d.setMonth(d.getMonth() + safeMonths);
+        expiresAt = d.toISOString().split('T')[0];
+        curProfile.isPremium = true;
+        curProfile.premiumPlan = params.plan;
+        curProfile.premiumExpiresAt = expiresAt;
+      }
+
+      await client.query(
+        `UPDATE public.app_users SET profile = $1::jsonb, updated_at = now() WHERE id = $2`,
+        [JSON.stringify(curProfile), targetRow.id]
+      );
+
+      const unitPrice =
+        params.plan === 'business'
+          ? cfg.businessMonthlyPriceUzs
+          : params.plan === 'pro'
+          ? cfg.proMonthlyPriceUzs
+          : 0;
+      const amountUzs = unitPrice * safeMonths;
+
+      const subEv: SubscriptionEvent = {
+        id: subEventId,
+        userId: targetRow.id,
+        userEmail: targetRow.email,
+        userFullName: curProfile.fullName || targetRow.email,
+        plan: params.plan,
+        previousPlan,
+        amountUzs,
+        currency: 'UZS',
+        source: 'admin_grant',
+        actorUserId: params.adminUser.id,
+        durationMonths: safeMonths,
+        expiresAt,
+        reason: params.reason,
+        createdAt: nowIso,
+      };
+
+      await client.query(
+        `INSERT INTO public.subscription_events (
+           id, user_id, plan, previous_plan, amount_uzs, currency, source, actor_user_id, duration_months, expires_at, reason, created_at
+         ) VALUES ($1, $2, $3, $4, $5, 'UZS', 'admin_grant', $6, $7, $8, $9, $10::timestamptz)`,
+        [
+          subEv.id,
+          subEv.userId,
+          subEv.plan,
+          subEv.previousPlan,
+          subEv.amountUzs,
+          subEv.actorUserId,
+          subEv.durationMonths,
+          subEv.expiresAt || null,
+          subEv.reason || null,
+          nowIso,
+        ]
+      );
+
+      const aud: AdminAuditLog = {
+        id: audId,
+        adminUserId: params.adminUser.id,
+        adminEmail: params.adminUser.email,
+        action: 'subscription.update',
+        targetType: 'user',
+        targetId: targetRow.id,
+        reason: params.reason,
+        metadata: {
+          targetEmail: targetRow.email,
+          previousPlan,
+          nextPlan: params.plan,
+          durationMonths: safeMonths,
+          amountUzs,
+        },
+        ipAddress: params.ipAddress,
+        createdAt: nowIso,
+      };
+
+      await client.query(
+        `INSERT INTO public.admin_audit_logs (
+           id, admin_user_id, admin_email, action, target_type, target_id, reason, metadata, ip_address, created_at
+         ) VALUES ($1, $2, $3, $4, 'user', $5, $6, $7::jsonb, $8, $9::timestamptz)`,
+        [
+          aud.id,
+          aud.adminUserId,
+          aud.adminEmail,
+          aud.action,
+          aud.targetId,
+          aud.reason,
+          JSON.stringify(aud.metadata || {}),
+          aud.ipAddress || null,
+          nowIso,
+        ]
+      );
+
+      return { subscriptionEvent: subEv, auditLog: aud };
+    });
+
+    const summaries = await this.loadAllAdminUserSummaries();
+    const user = summaries.find((u) => u.id === params.targetUserId)!;
+    return { user, subscriptionEvent, auditLog };
+  }
+
+  async adminSetUserSuspended(params: {
+    adminUser: UserProfile;
+    targetUserId: string;
+    suspended: boolean;
+    reason: string;
+    ipAddress?: string;
+  }): Promise<{ user: AdminUserSummary; clearedSessions: number; auditLog: AdminAuditLog }> {
+    const audId = `aud_${crypto.randomUUID()}`;
+    const nowIso = new Date().toISOString();
+
+    const { clearedSessions, auditLog } = await this.storage.withTransaction(async (client) => {
+      const userRes = await client.query<{ id: string; email: string; profile: UserProfile }>(
+        `SELECT id, email, profile FROM public.app_users WHERE id = $1 FOR UPDATE`,
+        [params.targetUserId]
+      );
+      const targetRow = userRes.rows[0];
+      if (!targetRow) throw new Error('Foydalanuvchi topilmadi');
+      if (targetRow.id === params.adminUser.id || isVerifiedSuperAdminUser({ id: targetRow.id, email: targetRow.email })) {
+        throw new Error('Super Admin hisobini bloklab boʻlmaydi');
+      }
+
+      const curProfile = { ...(targetRow.profile || {}) } as UserProfile;
+      curProfile.isSuspended = params.suspended;
+
+      await client.query(
+        `UPDATE public.app_users SET profile = $1::jsonb, updated_at = now() WHERE id = $2`,
+        [JSON.stringify(curProfile), targetRow.id]
+      );
+
+      let cleared = 0;
+      if (params.suspended) {
+        const del = await client.query(`DELETE FROM public.app_sessions WHERE user_id = $1`, [targetRow.id]);
+        cleared = del.rowCount || 0;
+      }
+
+      const aud: AdminAuditLog = {
+        id: audId,
+        adminUserId: params.adminUser.id,
+        adminEmail: params.adminUser.email,
+        action: params.suspended ? 'user.suspend' : 'user.reactivate',
+        targetType: 'user',
+        targetId: targetRow.id,
+        reason: params.reason,
+        metadata: {
+          targetEmail: targetRow.email,
+          suspended: params.suspended,
+          clearedSessions: cleared,
+        },
+        ipAddress: params.ipAddress,
+        createdAt: nowIso,
+      };
+
+      await client.query(
+        `INSERT INTO public.admin_audit_logs (
+           id, admin_user_id, admin_email, action, target_type, target_id, reason, metadata, ip_address, created_at
+         ) VALUES ($1, $2, $3, $4, 'user', $5, $6, $7::jsonb, $8, $9::timestamptz)`,
+        [
+          aud.id,
+          aud.adminUserId,
+          aud.adminEmail,
+          aud.action,
+          aud.targetId,
+          aud.reason,
+          JSON.stringify(aud.metadata || {}),
+          aud.ipAddress || null,
+          nowIso,
+        ]
+      );
+
+      return { clearedSessions: cleared, auditLog: aud };
+    });
+
+    const summaries = await this.loadAllAdminUserSummaries();
+    const user = summaries.find((u) => u.id === params.targetUserId)!;
+    return { user, clearedSessions, auditLog };
+  }
+
+  async adminRevokeUserSessions(params: {
+    adminUser: UserProfile;
+    targetUserId: string;
+    reason: string;
+    ipAddress?: string;
+  }): Promise<{ clearedSessions: number; auditLog: AdminAuditLog }> {
+    const audId = `aud_${crypto.randomUUID()}`;
+    const nowIso = new Date().toISOString();
+
+    return this.storage.withTransaction(async (client) => {
+      const userRes = await client.query<{ id: string; email: string }>(
+        `SELECT id, email FROM public.app_users WHERE id = $1`,
+        [params.targetUserId]
+      );
+      const targetRow = userRes.rows[0];
+      if (!targetRow) throw new Error('Foydalanuvchi topilmadi');
+
+      const del = await client.query(`DELETE FROM public.app_sessions WHERE user_id = $1`, [targetRow.id]);
+      const clearedSessions = del.rowCount || 0;
+
+      const auditLog: AdminAuditLog = {
+        id: audId,
+        adminUserId: params.adminUser.id,
+        adminEmail: params.adminUser.email,
+        action: 'user.revoke_sessions',
+        targetType: 'user',
+        targetId: targetRow.id,
+        reason: params.reason,
+        metadata: {
+          targetEmail: targetRow.email,
+          clearedSessions,
+        },
+        ipAddress: params.ipAddress,
+        createdAt: nowIso,
+      };
+
+      await client.query(
+        `INSERT INTO public.admin_audit_logs (
+           id, admin_user_id, admin_email, action, target_type, target_id, reason, metadata, ip_address, created_at
+         ) VALUES ($1, $2, $3, $4, 'user', $5, $6, $7::jsonb, $8, $9::timestamptz)`,
+        [
+          auditLog.id,
+          auditLog.adminUserId,
+          auditLog.adminEmail,
+          auditLog.action,
+          auditLog.targetId,
+          auditLog.reason,
+          JSON.stringify(auditLog.metadata || {}),
+          auditLog.ipAddress || null,
+          nowIso,
+        ]
+      );
+
+      return { clearedSessions, auditLog };
+    });
+  }
+
+  private async loadRecentAiEvents(limit: number = 5000): Promise<AiUsageEvent[]> {
+    const res = await this.storage.query<{
+      id: string;
+      user_id: string | null;
+      endpoint: string;
+      model: string;
+      source: 'gemini' | 'fallback';
+      status: 'success' | 'fallback' | 'error';
+      latency_ms: number;
+      prompt_chars: number;
+      completion_chars: number;
+      language: string;
+      error_code: string | null;
+      created_at: Date | string;
+    }>(
+      `SELECT id, user_id, endpoint, model, source, status, latency_ms, prompt_chars, completion_chars, language, error_code, created_at
+         FROM public.ai_usage_events
+        ORDER BY created_at DESC
+        LIMIT $1`,
+      [limit],
+      { retryable: true, label: 'load_ai_usage_events' }
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      userId: r.user_id || undefined,
+      endpoint: r.endpoint,
+      model: r.model,
+      source: r.source,
+      status: r.status,
+      latencyMs: Number(r.latency_ms) || 0,
+      promptChars: Number(r.prompt_chars) || 0,
+      completionChars: Number(r.completion_chars) || 0,
+      language: r.language || 'uz',
+      errorCode: r.error_code || undefined,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    }));
+  }
+
+  private async loadRecentApiErrors(limit: number = 2000): Promise<ApiErrorEvent[]> {
+    const res = await this.storage.query<{
+      id: string;
+      method: string;
+      path: string;
+      status_code: number;
+      error_message: string;
+      user_id: string | null;
+      created_at: Date | string;
+    }>(
+      `SELECT id, method, path, status_code, error_message, user_id, created_at
+         FROM public.api_error_events
+        ORDER BY created_at DESC
+        LIMIT $1`,
+      [limit],
+      { retryable: true, label: 'load_api_error_events' }
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      method: r.method,
+      path: r.path,
+      statusCode: Number(r.status_code) || 500,
+      errorMessage: r.error_message,
+      userId: r.user_id || undefined,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    }));
+  }
+
+  private async loadRecentSubscriptionEvents(limit: number = 2000): Promise<SubscriptionEvent[]> {
+    const res = await this.storage.query<{
+      id: string;
+      user_id: string;
+      user_email: string | null;
+      user_full_name: string | null;
+      plan: 'free' | 'pro' | 'business';
+      previous_plan: 'free' | 'pro' | 'business';
+      amount_uzs: number | string;
+      currency: string;
+      source: SubscriptionEvent['source'];
+      actor_user_id: string;
+      duration_months: number;
+      expires_at: string | null;
+      reason: string | null;
+      created_at: Date | string;
+    }>(
+      `SELECT s.id,
+              s.user_id,
+              u.email AS user_email,
+              u.profile->>'fullName' AS user_full_name,
+              s.plan,
+              s.previous_plan,
+              s.amount_uzs,
+              s.currency,
+              s.source,
+              s.actor_user_id,
+              s.duration_months,
+              s.expires_at,
+              s.reason,
+              s.created_at
+         FROM public.subscription_events s
+         LEFT JOIN public.app_users u ON u.id = s.user_id
+        ORDER BY s.created_at DESC
+        LIMIT $1`,
+      [limit],
+      { retryable: true, label: 'load_subscription_events' }
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      userEmail: r.user_email || undefined,
+      userFullName: r.user_full_name || undefined,
+      plan: r.plan,
+      previousPlan: r.previous_plan || 'free',
+      amountUzs: Number(r.amount_uzs) || 0,
+      currency: 'UZS',
+      source: r.source,
+      actorUserId: r.actor_user_id,
+      durationMonths: Number(r.duration_months) || 0,
+      expiresAt: r.expires_at || undefined,
+      reason: r.reason || undefined,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    }));
+  }
+
+  async getAdminOverviewData(): Promise<AdminOverviewData> {
+    const [users, txCountRes, aiEvents, apiErrors, subscriptionEvents, auditRes, config, health] = await Promise.all([
+      this.loadAllAdminUserSummaries(),
+      this.storage.query<{ cnt: string }>(
+        `SELECT count(*)::text AS cnt FROM public.app_data WHERE collection = 'transactions'`,
+        [],
+        { retryable: true, label: 'count_all_transactions' }
+      ),
+      this.loadRecentAiEvents(),
+      this.loadRecentApiErrors(),
+      this.loadRecentSubscriptionEvents(),
+      this.listAdminAuditLogs({ page: 1, limit: 8 }),
+      this.getAppConfig(),
+      this.healthCheck(),
+    ]);
+
+    return buildAdminOverviewData({
+      users,
+      totalTransactions: Number(txCountRes.rows[0]?.cnt || 0),
+      aiEvents,
+      apiErrors,
+      subscriptionEvents,
+      auditLogs: auditRes.logs,
+      config,
+      health,
+    });
+  }
+
+  async getAdminSubscriptionsData(params: { page?: number; limit?: number }): Promise<AdminSubscriptionsData> {
+    const [users, subscriptionEvents] = await Promise.all([
+      this.loadAllAdminUserSummaries(),
+      this.loadRecentSubscriptionEvents(),
+    ]);
+    return buildAdminSubscriptionsData({
+      users,
+      subscriptionEvents,
+      page: Number(params.page) || 1,
+      limit: Number(params.limit) || 20,
+    });
+  }
+
+  async getAdminRevenueData(): Promise<AdminRevenueData> {
+    const [users, subscriptionEvents, config] = await Promise.all([
+      this.loadAllAdminUserSummaries(),
+      this.loadRecentSubscriptionEvents(),
+      this.getAppConfig(),
+    ]);
+    return buildAdminRevenueData({ users, subscriptionEvents, config });
+  }
+
+  async getAdminAiAnalyticsData(): Promise<AdminAiAnalyticsData> {
+    const aiEvents = await this.loadRecentAiEvents();
+    return buildAdminAiAnalyticsData(aiEvents);
+  }
+
+  async getAdminSystemHealthData(): Promise<AdminSystemHealthData> {
+    const [apiErrors, health] = await Promise.all([this.loadRecentApiErrors(), this.healthCheck()]);
+    return buildAdminSystemHealthData({ apiErrors, health });
   }
 }

@@ -20,6 +20,7 @@ const EXPECTED_MIGRATIONS = [
   '202611130004_recurring_transactions.sql',
   '202611130005_atomic_user_registration.sql',
   '202611130006_dual_starter_wallets_and_idempotency_locks.sql',
+  '202611170001_admin_telemetry_and_audit.sql',
 ];
 
 const ALL_COLLECTIONS = [
@@ -122,6 +123,19 @@ test('SQL migrations #001-#006 exist, enforce RLS, search_path, advisory locks, 
   ]) {
     assert.match(m6, new RegExp(`revoke all on function public\\.${fn}[\\s\\S]*?from public, anon, authenticated`, 'i'));
     assert.match(m6, new RegExp(`grant execute on function public\\.${fn}[\\s\\S]*?to service_role`, 'i'));
+  }
+
+  const m7 = fs.readFileSync(path.join(MIGRATIONS_DIR, EXPECTED_MIGRATIONS[6]), 'utf-8');
+  for (const tbl of [
+    'admin_audit_logs',
+    'ai_usage_events',
+    'api_error_events',
+    'subscription_events',
+    'app_runtime_config',
+  ]) {
+    assert.match(m7, new RegExp(`alter table public\\.${tbl} enable row level security`, 'i'));
+    assert.match(m7, new RegExp(`revoke all on table public\\.${tbl} from anon, authenticated`, 'i'));
+    assert.match(m7, new RegExp(`grant all on table public\\.${tbl} to service_role`, 'i'));
   }
 
   // Verify exact RPC parameter counts match TS callers in supabase-repository.ts & supabase-auth.ts

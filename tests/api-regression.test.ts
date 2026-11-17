@@ -257,10 +257,107 @@ test('API regression: health, security headers, CORS, auth lifecycle, disabled e
     const rcps = await api(srv.baseUrl, '/api/receipts', {}, token);
     assert.equal(rcps.body.receipts[0].transactionId, rcp.body.receipt.transactionId);
 
-    // 7. Summary, Health Score, Forecast, AI Assistant
+    // 7. Summary, custom period validation, Health Score, AI Assistant
     const sum = await api(srv.baseUrl, '/api/reports/summary?period=this_year', {}, token);
     assert.equal(sum.status, 200);
     assert.equal(sum.body.summary.totalIncome, 2_000_000);
+
+    const badCustomSum = await api(
+      srv.baseUrl,
+      '/api/reports/summary?period=custom&startDate=invalid&endDate=2026-11-30',
+      {},
+      token
+    );
+    assert.equal(badCustomSum.status, 400);
+
+    const swappedCustomSum = await api(
+      srv.baseUrl,
+      '/api/reports/summary?period=custom&startDate=2026-11-30&endDate=2026-11-01',
+      {},
+      token
+    );
+    assert.equal(swappedCustomSum.status, 200);
+    assert.equal(swappedCustomSum.body.summary.totalIncome, 2_000_000);
+
+    // 7b. Receipt non-food category matching & bank sync transport categoryId
+    const transportReceipt = await api(
+      srv.baseUrl,
+      '/api/receipts/save',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          merchantName: 'Lukoil',
+          date: '2026-11-14',
+          totalAmount: 150_000,
+          currency: 'UZS',
+          categorySuggested: 'Transport va yoqilgʻi',
+          lineItems: [],
+          confidence: 0.92,
+          createTransaction: true,
+        }),
+      },
+      token
+    );
+    assert.equal(transportReceipt.status, 200);
+    assert.ok(transportReceipt.body.receipt.transactionId);
+
+    const bankConn = await api(
+      srv.baseUrl,
+      '/api/banks/connect',
+      { method: 'POST', body: JSON.stringify({ bankId: 'uzcard', bankName: 'Agrobank' }) },
+      token
+    );
+    assert.equal(bankConn.status, 200);
+    const bankSync = await api(
+      srv.baseUrl,
+      `/api/banks/${bankConn.body.connection.id}/sync`,
+      { method: 'POST' },
+      token
+    );
+    assert.equal(bankSync.status, 200);
+    assert.equal(bankSync.body.importedCount, 2);
+
+    const allTxAfter = await api(srv.baseUrl, '/api/transactions', {}, token);
+    assert.equal(allTxAfter.status, 200);
+    const lukoilTx = allTxAfter.body.transactions.find((t: any) => t.id === transportReceipt.body.receipt.transactionId);
+    assert.equal(lukoilTx.categoryId, 'exp_transport');
+    const taxiTx = allTxAfter.body.transactions.find((t: any) => String(t.description).includes('Yandex Taxi'));
+    assert.equal(taxiTx.categoryId, 'exp_transport');
+
+    // 7c. Wallet validation & cross-currency auto-conversion
+    const negWalletEdit = await api(
+      srv.baseUrl,
+      `/api/wallets/${w1.id}`,
+      { method: 'PUT', body: JSON.stringify({ balance: -500 }) },
+      token
+    );
+    assert.equal(negWalletEdit.status, 400);
+
+    const safeWalletEdit = await api(
+      srv.baseUrl,
+      `/api/wallets/${w1.id}`,
+      { method: 'PUT', body: JSON.stringify({ name: 'Yangilangan karta', userId: 'hijacked_user', id: 'hijacked_id' }) },
+      token
+    );
+    assert.equal(safeWalletEdit.status, 200);
+    assert.equal(safeWalletEdit.body.wallet.id, w1.id);
+    assert.equal(safeWalletEdit.body.wallet.name, 'Yangilangan karta');
+
+    const usdWallet = await api(
+      srv.baseUrl,
+      '/api/wallets',
+      { method: 'POST', body: JSON.stringify({ name: 'USD Karta', type: 'card', currency: 'USD', balance: 100 }) },
+      token
+    );
+    assert.equal(usdWallet.status, 200);
+    const crossTransfer = await api(
+      srv.baseUrl,
+      '/api/wallets/transfer',
+      { method: 'POST', body: JSON.stringify({ fromWalletId: usdWallet.body.wallet.id, toWalletId: w2.id, amount: 10 }) },
+      token
+    );
+    assert.equal(crossTransfer.status, 200);
+    assert.ok(crossTransfer.body.transfer.targetAmount > 10_000);
 
     const aiHealth = await api(srv.baseUrl, '/api/ai/health-score', {}, token);
     assert.equal(aiHealth.status, 200);
@@ -282,5 +379,68 @@ test('API regression: health, security headers, CORS, auth lifecycle, disabled e
     assert.equal(afterOut.status, 401);
   } finally {
     await srv.close();
+  }
+});
+
+test('Dev DB auto-seeds xisugamer@gmail.com / Admin123 and enforces server-side ADMIN_EMAIL + ADMIN_ACCESS_CODE', async () => {
+  clearAuthRateLimitForTests();
+  const prevAdminEmail = process.env.ADMIN_EMAIL;
+  const prevAdminCode = process.env.ADMIN_ACCESS_CODE;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hisobot-gamer-seed-'));
+  const db = new Database({ dbFilePath: path.join(dir, 'db.json'), skipDemoSeed: false });
+  setRepositoryForTests(new JsonAsyncRepository(db));
+
+  const app = createApp();
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const { port } = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    // When ADMIN_EMAIL is not xisugamer@gmail.com, account stays non-admin
+    delete process.env.ADMIN_EMAIL;
+    delete process.env.ADMIN_ACCESS_CODE;
+
+    const loginNoAdmin = await api(baseUrl, '/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'xisugamer@gmail.com', password: 'Admin123' }),
+    });
+    assert.equal(loginNoAdmin.status, 200);
+    assert.equal(loginNoAdmin.body.user.email, 'xisugamer@gmail.com');
+    assert.notEqual(loginNoAdmin.body.user.isSuperAdmin, true);
+    assert.ok(loginNoAdmin.body.token);
+
+    // When configured server-side as Super Admin + separate code Admin123, unlock succeeds
+    process.env.ADMIN_EMAIL = 'xisugamer@gmail.com';
+    process.env.ADMIN_ACCESS_CODE = 'Admin123';
+
+    const meAdmin = await api(baseUrl, '/api/auth/me', {}, loginNoAdmin.body.token);
+    assert.equal(meAdmin.status, 200);
+    assert.equal(meAdmin.body.user.isSuperAdmin, true);
+
+    const unlockRes = await api(
+      baseUrl,
+      '/api/admin/unlock',
+      { method: 'POST', body: JSON.stringify({ code: 'Admin123' }) },
+      loginNoAdmin.body.token
+    );
+    assert.equal(unlockRes.status, 200);
+    assert.equal(unlockRes.body.unlocked, true);
+
+    const overviewRes = await api(
+      baseUrl,
+      '/api/admin/overview',
+      { headers: { 'X-Admin-Code-Token': unlockRes.body.unlockToken } },
+      loginNoAdmin.body.token
+    );
+    assert.equal(overviewRes.status, 200);
+  } finally {
+    if (prevAdminEmail === undefined) delete process.env.ADMIN_EMAIL;
+    else process.env.ADMIN_EMAIL = prevAdminEmail;
+    if (prevAdminCode === undefined) delete process.env.ADMIN_ACCESS_CODE;
+    else process.env.ADMIN_ACCESS_CODE = prevAdminCode;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    setRepositoryForTests(null);
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

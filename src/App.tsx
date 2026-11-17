@@ -18,6 +18,7 @@ import { BudgetView } from './components/views/BudgetView.tsx';
 import { GoalsView } from './components/views/GoalsView.tsx';
 import { DebtsView } from './components/views/DebtsView.tsx';
 import { SettingsView } from './components/views/SettingsView.tsx';
+import { AdminDashboardPage } from './components/admin/AdminDashboardPage.tsx';
 
 // Expanded Views
 import { WalletsView } from './components/views/WalletsView.tsx';
@@ -76,10 +77,34 @@ function MainApp() {
   const { user, loading: authLoading, logout } = useAuth();
   const toast = useToast();
 
-  const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
+  const [currentTab, setCurrentTab] = useState<NavTab>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname === '/admin') {
+      return 'admin';
+    }
+    return 'dashboard';
+  });
   const [selectedPeriod, setSelectedPeriod] = useState<DashboardPeriod>('this_month');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [quickAddSheetOpen, setQuickAddSheetOpen] = useState(false);
+
+  const handleSelectTab = useCallback((tab: NavTab) => {
+    setCurrentTab(tab);
+    if (typeof window !== 'undefined') {
+      const targetPath = tab === 'admin' ? '/admin' : '/';
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState(null, '', targetPath);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onPopState = () => {
+      setCurrentTab(window.location.pathname === '/admin' ? 'admin' : 'dashboard');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   // Core Data State
   const [summary, setSummary] = useState<FinancialSummary | null>(null);
@@ -268,8 +293,17 @@ function MainApp() {
   useEffect(() => {
     if (user) {
       refreshAllData();
+    } else if (!authLoading) {
+      setSummary(null);
+      setTransactions([]);
+      setCategories([]);
+      setBudgets([]);
+      setGoals([]);
+      setDebts([]);
+      setDataError(null);
+      setDataLoading(false);
     }
-  }, [user, refreshAllData]);
+  }, [user, authLoading, refreshAllData]);
 
   // Transaction Actions
   const handleSaveTransaction = async (txData: Omit<Transaction, 'id' | 'userId' | 'createdAt'>) => {
@@ -425,7 +459,7 @@ function MainApp() {
       {/* Desktop & Mobile Drawer Sidebar */}
       <Sidebar
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
+        onSelectTab={handleSelectTab}
         isOpenMobile={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
         onOpenAuthModal={() => setAuthModalOpen(true)}
@@ -448,7 +482,7 @@ function MainApp() {
                 setTxModalOpen(true);
               }}
               onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
-              onNavigateTab={setCurrentTab}
+              onNavigateTab={handleSelectTab}
               onOpenAuthModal={() => setAuthModalOpen(true)}
             />
             {dataError && (
@@ -488,7 +522,7 @@ function MainApp() {
                   setTxModalOpen(true);
                 }}
                 onDeleteTransaction={handleDeleteTransaction}
-                onNavigateTab={setCurrentTab}
+                onNavigateTab={handleSelectTab}
                 onOpenGoalDeposit={(goal) => {
                   setSelectedGoalForDeposit(goal);
                   setGoalDepositModalOpen(true);
@@ -543,10 +577,10 @@ function MainApp() {
               />
             )}
 
-            {currentTab === 'wallets' && <WalletsView />}
+            {currentTab === 'wallets' && <WalletsView onTransactionSaved={() => refreshAllData()} />}
             {currentTab === 'family' && <FamilyView />}
             {currentTab === 'subscriptions' && <SubscriptionsView />}
-            {currentTab === 'recurring' && <RecurringView />}
+            {currentTab === 'recurring' && <RecurringView onTransactionSaved={() => refreshAllData()} />}
             {currentTab === 'receipts' && (
               <ReceiptScannerView
                 onTransactionSaved={() => {
@@ -556,7 +590,7 @@ function MainApp() {
             )}
             {currentTab === 'forecast' && <ForecastView />}
             {currentTab === 'currencies' && <CurrenciesView />}
-            {currentTab === 'banks' && <BanksView />}
+            {currentTab === 'banks' && <BanksView onTransactionSaved={() => refreshAllData()} />}
             {currentTab === 'telegram' && <TelegramView />}
             {currentTab === 'reports' && <ReportsView />}
 
@@ -607,6 +641,14 @@ function MainApp() {
               <SettingsView
                 onOpenPremiumModal={() => setPremiumModalOpen(true)}
                 onRequireAuth={() => setAuthModalOpen(true)}
+                onOpenAdminPanel={() => handleSelectTab('admin')}
+              />
+            )}
+
+            {currentTab === 'admin' && (
+              <AdminDashboardPage
+                onNavigateTab={handleSelectTab}
+                onOpenAuthModal={() => setAuthModalOpen(true)}
               />
             )}
           </div>
@@ -614,11 +656,11 @@ function MainApp() {
       </div>
 
       {/* Floating AI Assistant Entry Button */}
-      {user && !appLocked && currentTab !== 'ai' && (
+      {user && !appLocked && currentTab !== 'ai' && currentTab !== 'admin' && (
         <FloatingAIButton
           onClick={() => {
             setQuickAddSheetOpen(false);
-            setCurrentTab('ai');
+            handleSelectTab('ai');
           }}
         />
       )}
@@ -626,7 +668,7 @@ function MainApp() {
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
+        onSelectTab={handleSelectTab}
         onOpenQuickAdd={() => setQuickAddSheetOpen(true)}
       />
 
@@ -697,7 +739,7 @@ function MainApp() {
             type="button"
             onClick={() => {
               setQuickAddSheetOpen(false);
-              setCurrentTab('receipts');
+              handleSelectTab('receipts');
             }}
             className="flex items-center gap-3 p-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.10] bg-slate-50 dark:bg-white/[0.04] text-left"
           >
@@ -714,7 +756,7 @@ function MainApp() {
             type="button"
             onClick={() => {
               setQuickAddSheetOpen(false);
-              setCurrentTab('ai');
+              handleSelectTab('ai');
             }}
             className="flex items-center gap-3 p-3.5 rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.06] text-left"
           >
@@ -731,7 +773,7 @@ function MainApp() {
             type="button"
             onClick={() => {
               setQuickAddSheetOpen(false);
-              setCurrentTab('wallets');
+              handleSelectTab('wallets');
             }}
             className="flex items-center gap-3 p-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.10] bg-slate-50 dark:bg-white/[0.04] text-left"
           >

@@ -116,6 +116,8 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const receiptTriggerRef = useRef<HTMLInputElement>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const prevStorageKeyRef = useRef<string>(storageKey);
   const ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
   const activeConv =
@@ -123,6 +125,31 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
   const messages = activeConv?.messages || [];
   const hasUserMessages = messages.some((m) => m.role === 'user');
   const hasStreamingMessage = messages.some((m) => m.isStreaming);
+
+  // Reload per-user conversations when user switches
+  useEffect(() => {
+    if (prevStorageKeyRef.current === storageKey) return;
+    prevStorageKeyRef.current = storageKey;
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    setLoading(false);
+
+    let nextConvs: AIConversation[] | null = null;
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) nextConvs = parsed;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    if (!nextConvs) {
+      nextConvs = [createInitialConversation(user?.fullName)];
+    }
+    setConversations(nextConvs);
+    setActiveConvId(nextConvs[0]?.id || '');
+  }, [storageKey, user?.fullName]);
 
   // Persist conversation history (skip mid-stream chunks for zero UI jank)
   useEffect(() => {
@@ -136,7 +163,10 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
 
   // Load Financial Health Score
   const loadHealth = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setHealthScore(null);
+      return;
+    }
     try {
       const res = await api.getHealthScore();
       setHealthScore(res.healthScore);
@@ -153,9 +183,10 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: hasStreamingMessage ? 'auto' : 'smooth' });
   }, [messages, loading, hasStreamingMessage]);
 
-  // Cleanup active TTS on unmount
+  // Cleanup active TTS & active stream on unmount
   useEffect(() => {
     return () => {
+      streamAbortRef.current?.abort();
       if (ttsSupported) {
         window.speechSynthesis.cancel();
       }
@@ -199,11 +230,11 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
     [ttsSupported, setSpeaking, setIdle]
   );
 
-  const appendMessagesToActive = useCallback(
-    (newMsgs: AIChatMessage[], titleHint?: string) => {
+  const appendMessagesToConv = useCallback(
+    (targetConvId: string | undefined, newMsgs: AIChatMessage[], titleHint?: string) => {
       setConversations((prev) =>
         prev.map((conv) => {
-          if (conv.id !== activeConv?.id) return conv;
+          if (conv.id !== targetConvId) return conv;
           const lastMsg = newMsgs[newMsgs.length - 1];
           const shouldRename =
             titleHint && conv.title === 'Yangi moliyaviy suhbat';
@@ -219,14 +250,21 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
         })
       );
     },
-    [activeConv?.id]
+    []
   );
 
-  const upsertAssistantMessage = useCallback(
-    (assistantMsg: AIChatMessage) => {
+  const appendMessagesToActive = useCallback(
+    (newMsgs: AIChatMessage[], titleHint?: string) => {
+      appendMessagesToConv(activeConv?.id, newMsgs, titleHint);
+    },
+    [activeConv?.id, appendMessagesToConv]
+  );
+
+  const upsertAssistantMessageInConv = useCallback(
+    (targetConvId: string | undefined, assistantMsg: AIChatMessage) => {
       setConversations((prev) =>
         prev.map((conv) => {
-          if (conv.id !== activeConv?.id) return conv;
+          if (conv.id !== targetConvId) return conv;
           const exists = conv.messages.some((m) => m.id === assistantMsg.id);
           const nextMessages = exists
             ? conv.messages.map((m) => (m.id === assistantMsg.id ? { ...m, ...assistantMsg } : m))
@@ -240,7 +278,7 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
         })
       );
     },
-    [activeConv?.id]
+    []
   );
 
   const executeAssistantTurn = useCallback(
@@ -252,7 +290,11 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
       if (!clean) return null;
 
       stopSpeaking();
+      streamAbortRef.current?.abort();
+      const abortCtrl = new AbortController();
+      streamAbortRef.current = abortCtrl;
 
+      const targetConvId = activeConv?.id;
       const recentHistory = messages
         .filter((m) => !m.isError && !m.isStreaming && m.id !== 'welcome')
         .slice(-8)
@@ -270,7 +312,7 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
         timestamp: nowTime,
       };
 
-      appendMessagesToActive([userMsg], clean);
+      appendMessagesToConv(targetConvId, [userMsg], clean);
       if (options?.clearInput) setInput('');
       setLoading(true);
       setThinking();
@@ -286,10 +328,11 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
           recentHistory,
           options?.languageHint || 'uz',
           {
+            signal: abortCtrl.signal,
             onDelta: (_chunk, accumulated) => {
               streamedContent = accumulated;
               hasInsertedStreamBubble = true;
-              upsertAssistantMessage({
+              upsertAssistantMessageInConv(targetConvId, {
                 id: assistantId,
                 role: 'assistant',
                 content: accumulated,
@@ -302,7 +345,7 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
             onRows: (rows) => {
               streamedRows = rows;
               if (hasInsertedStreamBubble || streamedContent) {
-                upsertAssistantMessage({
+                upsertAssistantMessageInConv(targetConvId, {
                   id: assistantId,
                   role: 'assistant',
                   content: streamedContent,
@@ -332,7 +375,7 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
           isStreaming: false,
         };
 
-        upsertAssistantMessage(assistantMsg);
+        upsertAssistantMessageInConv(targetConvId, assistantMsg);
 
         if ((options?.speakReply ?? autoSpeak) && ttsSupported) {
           speakText(res.reply, assistantId, options?.languageHint);
@@ -342,6 +385,18 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
 
         return assistantMsg;
       } catch (err: any) {
+        if (err?.name === 'AbortError' || abortCtrl.signal.aborted) {
+          if (hasInsertedStreamBubble) {
+            upsertAssistantMessageInConv(targetConvId, {
+              id: assistantId,
+              role: 'assistant',
+              content: streamedContent || 'Soʻrov bekor qilindi.',
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              isStreaming: false,
+            });
+          }
+          return null;
+        }
         const errMsg: AIChatMessage = {
           id: hasInsertedStreamBubble ? assistantId : `msg_err_${Date.now()}`,
           role: 'assistant',
@@ -353,15 +408,19 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
           isStreaming: false,
           retryQuery: clean,
         };
-        upsertAssistantMessage(errMsg);
+        upsertAssistantMessageInConv(targetConvId, errMsg);
         setError('Server bilan aloqada xatolik');
         throw err;
       } finally {
+        if (streamAbortRef.current === abortCtrl) {
+          streamAbortRef.current = null;
+        }
         setLoading(false);
       }
     },
     [
-      appendMessagesToActive,
+      activeConv?.id,
+      appendMessagesToConv,
       autoSpeak,
       messages,
       setError,
@@ -370,7 +429,7 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
       speakText,
       stopSpeaking,
       ttsSupported,
-      upsertAssistantMessage,
+      upsertAssistantMessageInConv,
     ]
   );
 
@@ -610,6 +669,7 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
 
   const handleNewChat = () => {
     stopSpeaking();
+    streamAbortRef.current?.abort();
     const fresh = createInitialConversation(user?.fullName);
     setConversations((prev) => [fresh, ...prev]);
     setActiveConvId(fresh.id);
@@ -624,18 +684,20 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
   };
 
   const handleDeleteConv = (id: string) => {
-    setConversations((prev) => {
-      const next = prev.filter((c) => c.id !== id);
-      if (next.length === 0) {
-        const fresh = createInitialConversation(user?.fullName);
-        setActiveConvId(fresh.id);
-        return [fresh];
-      }
+    if (activeConvId === id) {
+      streamAbortRef.current?.abort();
+    }
+    const remaining = conversations.filter((c) => c.id !== id);
+    if (remaining.length === 0) {
+      const fresh = createInitialConversation(user?.fullName);
+      setConversations([fresh]);
+      setActiveConvId(fresh.id);
+    } else {
+      setConversations(remaining);
       if (activeConvId === id) {
-        setActiveConvId(next[0].id);
+        setActiveConvId(remaining[0].id);
       }
-      return next;
-    });
+    }
   };
 
   const handleSelectCapability = (cap: AICapabilityItem) => {

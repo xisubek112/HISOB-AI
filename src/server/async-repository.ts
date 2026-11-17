@@ -4,6 +4,16 @@
  */
 
 import type {
+  AdminAiAnalyticsData,
+  AdminAuditLog,
+  AdminOverviewData,
+  AdminRevenueData,
+  AdminSubscriptionsData,
+  AdminSystemHealthData,
+  AdminUserSummary,
+  AiUsageEvent,
+  ApiErrorEvent,
+  AppRuntimeConfig,
   BankConnection,
   Budget,
   Category,
@@ -19,6 +29,7 @@ import type {
   RecurringTransaction,
   ScannedReceipt,
   Subscription,
+  SubscriptionEvent,
   TelegramConnection,
   Transaction,
   UserProfile,
@@ -168,6 +179,52 @@ export interface AsyncFinanceRepository {
   // Multi-currency
   getExchangeRates(): ExchangeRate[];
   convertCurrency(amount: number, from: CurrencyCode, to: CurrencyCode): { result: number; rate: number };
+
+  // Super Admin, Telemetry & App Config
+  recordAiUsageEvent(event: Omit<AiUsageEvent, 'id' | 'createdAt'>): Promise<AiUsageEvent>;
+  recordApiErrorEvent(event: Omit<ApiErrorEvent, 'id' | 'createdAt'>): Promise<ApiErrorEvent>;
+  getAppConfig(): Promise<AppRuntimeConfig>;
+  updateAppConfig(updates: Partial<AppRuntimeConfig>, updatedBy: string): Promise<AppRuntimeConfig>;
+  addAdminAuditLog(entry: Omit<AdminAuditLog, 'id' | 'createdAt'>): Promise<AdminAuditLog>;
+  listAdminAuditLogs(params: {
+    action?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ logs: AdminAuditLog[]; total: number; page: number; limit: number }>;
+  listAdminUsers(params: {
+    search?: string;
+    plan?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ users: AdminUserSummary[]; total: number; page: number; limit: number }>;
+  adminUpdateUserSubscription(params: {
+    adminUser: UserProfile;
+    targetUserId: string;
+    plan: 'free' | 'pro' | 'business';
+    durationMonths: number;
+    reason: string;
+    ipAddress?: string;
+  }): Promise<{ user: AdminUserSummary; subscriptionEvent: SubscriptionEvent; auditLog: AdminAuditLog }>;
+  adminSetUserSuspended(params: {
+    adminUser: UserProfile;
+    targetUserId: string;
+    suspended: boolean;
+    reason: string;
+    ipAddress?: string;
+  }): Promise<{ user: AdminUserSummary; clearedSessions: number; auditLog: AdminAuditLog }>;
+  adminRevokeUserSessions(params: {
+    adminUser: UserProfile;
+    targetUserId: string;
+    reason: string;
+    ipAddress?: string;
+  }): Promise<{ clearedSessions: number; auditLog: AdminAuditLog }>;
+  getAdminOverviewData(): Promise<AdminOverviewData>;
+  getAdminSubscriptionsData(params: { page?: number; limit?: number }): Promise<AdminSubscriptionsData>;
+  getAdminRevenueData(): Promise<AdminRevenueData>;
+  getAdminAiAnalyticsData(): Promise<AdminAiAnalyticsData>;
+  getAdminSystemHealthData(): Promise<AdminSystemHealthData>;
 }
 
 export class JsonAsyncRepository implements AsyncFinanceRepository {
@@ -448,6 +505,72 @@ export class JsonAsyncRepository implements AsyncFinanceRepository {
   }
   convertCurrency(amount: number, from: CurrencyCode, to: CurrencyCode) {
     return this.jsonDb.convertCurrency(amount, from, to);
+  }
+
+  async recordAiUsageEvent(event: Omit<AiUsageEvent, 'id' | 'createdAt'>) {
+    return this.jsonDb.recordAiUsageEvent(event);
+  }
+  async recordApiErrorEvent(event: Omit<ApiErrorEvent, 'id' | 'createdAt'>) {
+    return this.jsonDb.recordApiErrorEvent(event);
+  }
+  async getAppConfig() {
+    return this.jsonDb.getAppConfig();
+  }
+  async updateAppConfig(updates: Partial<AppRuntimeConfig>, updatedBy: string) {
+    return this.jsonDb.updateAppConfig(updates, updatedBy);
+  }
+  async addAdminAuditLog(entry: Omit<AdminAuditLog, 'id' | 'createdAt'>) {
+    return this.jsonDb.addAdminAuditLog(entry);
+  }
+  async listAdminAuditLogs(params: { action?: string; search?: string; page?: number; limit?: number }) {
+    return this.jsonDb.listAdminAuditLogs(params);
+  }
+  async listAdminUsers(params: { search?: string; plan?: string; status?: string; page?: number; limit?: number }) {
+    return this.jsonDb.listAdminUsers(params);
+  }
+  async adminUpdateUserSubscription(params: {
+    adminUser: UserProfile;
+    targetUserId: string;
+    plan: 'free' | 'pro' | 'business';
+    durationMonths: number;
+    reason: string;
+    ipAddress?: string;
+  }) {
+    return this.jsonDb.adminUpdateUserSubscription(params);
+  }
+  async adminSetUserSuspended(params: {
+    adminUser: UserProfile;
+    targetUserId: string;
+    suspended: boolean;
+    reason: string;
+    ipAddress?: string;
+  }) {
+    return this.jsonDb.adminSetUserSuspended(params);
+  }
+  async adminRevokeUserSessions(params: {
+    adminUser: UserProfile;
+    targetUserId: string;
+    reason: string;
+    ipAddress?: string;
+  }) {
+    return this.jsonDb.adminRevokeUserSessions(params);
+  }
+  async getAdminOverviewData() {
+    const health = await this.healthCheck();
+    return this.jsonDb.getAdminOverviewData(health);
+  }
+  async getAdminSubscriptionsData(params: { page?: number; limit?: number }) {
+    return this.jsonDb.getAdminSubscriptionsData(params);
+  }
+  async getAdminRevenueData() {
+    return this.jsonDb.getAdminRevenueData();
+  }
+  async getAdminAiAnalyticsData() {
+    return this.jsonDb.getAdminAiAnalyticsData();
+  }
+  async getAdminSystemHealthData() {
+    const health = await this.healthCheck();
+    return this.jsonDb.getAdminSystemHealthData(health);
   }
 }
 

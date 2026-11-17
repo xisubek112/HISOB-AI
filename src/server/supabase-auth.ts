@@ -110,14 +110,15 @@ export function buildDefaultUserProfile(params: {
       subscriptionAlerts: true,
       telegramSync: false,
     },
+    lastActiveAt: params.createdAt || new Date().toISOString(),
     createdAt: params.createdAt || new Date().toISOString(),
   };
 }
 
 export function sanitizeUserProfile(profile: Record<string, unknown>, fallback?: { id: string; email: string }): UserProfile {
-  // Strip any sensitive credential keys if accidentally present in JSONB profile
+  // Strip any sensitive credential keys or persisted privilege flags if accidentally present in JSONB profile
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { passwordHash, passwordSalt, salt, resetToken, ...rest } = profile;
+  const { passwordHash, passwordSalt, salt, resetToken, isSuperAdmin: _stripAdmin, ...rest } = profile;
   return {
     ...(rest as unknown as UserProfile),
     id: String(rest.id || fallback?.id || ''),
@@ -267,16 +268,34 @@ export class SupabaseAuthService {
       throw new Error('Elektron pochta yoki parol notoʻgʻri');
     }
 
-    // Transparently upgrade legacy 1000-iteration hash to 120,000-iteration hash on login
+    const sanitized = sanitizeUserProfile(row.profile, { id: row.id, email: row.email });
+    if (sanitized.isSuspended) {
+      throw new Error('Hisobingiz vaqtincha bloklangan. Administrator bilan bogʻlaning.');
+    }
+
+    const nowIso = new Date().toISOString();
+    // Transparently upgrade legacy 1000-iteration hash to 120,000-iteration hash and update lastActiveAt on login
     if (check.needsUpgrade) {
       const newSalt = crypto.randomBytes(16).toString('hex');
       const newHash = hashPasswordStrong(password, newSalt);
       await this.storage.query(
         `UPDATE public.app_users
-            SET password_hash = $1, password_salt = $2, updated_at = now()
+            SET password_hash = $1,
+                password_salt = $2,
+                profile = jsonb_set(profile, '{lastActiveAt}', to_jsonb($4::text), true),
+                updated_at = now()
           WHERE id = $3`,
-        [newHash, newSalt, row.id],
+        [newHash, newSalt, row.id, nowIso],
         { label: 'upgrade_password_hash' }
+      );
+    } else {
+      await this.storage.query(
+        `UPDATE public.app_users
+            SET profile = jsonb_set(profile, '{lastActiveAt}', to_jsonb($2::text), true),
+                updated_at = now()
+          WHERE id = $1`,
+        [row.id, nowIso],
+        { label: 'touch_login_active_at' }
       );
     }
 
@@ -291,7 +310,7 @@ export class SupabaseAuthService {
     );
 
     return {
-      user: sanitizeUserProfile(row.profile, { id: row.id, email: row.email }),
+      user: { ...sanitized, lastActiveAt: nowIso },
       token: rawToken,
     };
   }
@@ -310,6 +329,7 @@ export class SupabaseAuthService {
          FROM public.app_users u
         WHERE s.token_hash = $1
           AND s.user_id = u.id
+          AND coalesce((u.profile->>'isSuspended')::boolean, false) = false
           AND (s.expires_at IS NULL OR s.expires_at > now())
       RETURNING u.id, u.email, u.profile`,
       [tokenHash],

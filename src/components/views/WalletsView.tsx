@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { Wallet, WalletTransfer, WalletType, CurrencyCode } from '../../types/finance.ts';
 import { api } from '../../services/api.ts';
-import { formatMoney } from '../../utils/formatters.ts';
+import { DEFAULT_EXCHANGE_RATES, formatMoney } from '../../utils/formatters.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 import {
   Card,
@@ -29,7 +29,11 @@ import {
 
 const WALLET_COLORS = ['#10B981', '#06B6D4', '#3B82F6', '#F59E0B', '#EF4444', '#14B8A6', '#475569'];
 
-export const WalletsView: React.FC = () => {
+interface WalletsViewProps {
+  onTransactionSaved?: () => void;
+}
+
+export const WalletsView: React.FC<WalletsViewProps> = ({ onTransactionSaved }) => {
   const { user } = useAuth();
   const toast = useToast();
   const [wallets, setWallets] = useState<Wallet[]>([]);
@@ -128,6 +132,7 @@ export const WalletsView: React.FC = () => {
       }
       setIsWalletModalOpen(false);
       await loadData();
+      onTransactionSaved?.();
     } catch (err: any) {
       toast.error(err?.message || 'Hamyonni saqlashda xatolik');
     } finally {
@@ -188,13 +193,21 @@ export const WalletsView: React.FC = () => {
       return;
     }
 
-    const sourceWallet = wallets.find((w) => w.id === transferForm.fromWalletId);
-    if (sourceWallet && sourceWallet.balance < amt) {
+    const fromWallet = wallets.find((w) => w.id === transferForm.fromWalletId);
+    const toWallet = wallets.find((w) => w.id === transferForm.toWalletId);
+    if (fromWallet && fromWallet.balance < amt) {
       setTransferError(
-        `Mablagʻ yetarli emas. Joriy balans: ${formatMoney(sourceWallet.balance, sourceWallet.currency)}`
+        `Mablagʻ yetarli emas. Joriy balans: ${formatMoney(fromWallet.balance, fromWallet.currency)}`
       );
       return;
     }
+
+    const fromRate = fromWallet ? DEFAULT_EXCHANGE_RATES[fromWallet.currency] || 1 : 1;
+    const toRate = toWallet ? DEFAULT_EXCHANGE_RATES[toWallet.currency] || 1 : 1;
+    const computedTargetAmount =
+      fromWallet && toWallet && fromWallet.currency !== toWallet.currency
+        ? Math.max(1, Math.round((amt * fromRate) / toRate))
+        : undefined;
 
     try {
       setTransferSubmitting(true);
@@ -202,12 +215,13 @@ export const WalletsView: React.FC = () => {
         transferForm.fromWalletId,
         transferForm.toWalletId,
         amt,
-        undefined,
+        computedTargetAmount,
         transferForm.notes
       );
       setIsTransferModalOpen(false);
       toast.success('Hamyonlararo oʻtkazma bajarildi');
       await loadData();
+      onTransactionSaved?.();
     } catch (err: any) {
       setTransferError(err?.message || 'Oʻtkazmada xatolik yuz berdi');
     } finally {
@@ -216,11 +230,8 @@ export const WalletsView: React.FC = () => {
   };
 
   const totalBalanceUZS = wallets.reduce((acc, w) => {
-    if (w.currency === 'UZS') return acc + w.balance;
-    if (w.currency === 'USD') return acc + w.balance * 12850;
-    if (w.currency === 'EUR') return acc + w.balance * 13920;
-    if (w.currency === 'RUB') return acc + w.balance * 132;
-    return acc + w.balance;
+    const rate = DEFAULT_EXCHANGE_RATES[w.currency] || 1;
+    return acc + w.balance * rate;
   }, 0);
 
   return (
@@ -545,6 +556,25 @@ export const WalletsView: React.FC = () => {
             value={transferForm.amount}
             onChange={(e) => setTransferForm({ ...transferForm, amount: e.target.value })}
           />
+
+          {(() => {
+            const fromW = wallets.find((w) => w.id === transferForm.fromWalletId);
+            const toW = wallets.find((w) => w.id === transferForm.toWalletId);
+            const amtNum = parseFloat(transferForm.amount);
+            if (!fromW || !toW || fromW.currency === toW.currency || !Number.isFinite(amtNum) || amtNum <= 0) {
+              return null;
+            }
+            const converted = Math.max(
+              1,
+              Math.round((amtNum * (DEFAULT_EXCHANGE_RATES[fromW.currency] || 1)) / (DEFAULT_EXCHANGE_RATES[toW.currency] || 1))
+            );
+            return (
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-xs text-emerald-700 dark:text-emerald-300 font-medium tabular-nums">
+                Konvertatsiya ({fromW.currency} → {toW.currency}): Qabul qiluvchi hamyonga{' '}
+                <span className="font-bold">{formatMoney(converted, toW.currency)}</span> tushadi
+              </div>
+            );
+          })()}
 
           <Input
             label="Izoh (ixtiyoriy)"

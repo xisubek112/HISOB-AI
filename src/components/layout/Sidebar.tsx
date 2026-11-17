@@ -27,8 +27,10 @@ import {
   Send,
   Crown,
   ChartNoAxesCombined,
+  ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.tsx';
+import { DEFAULT_AVATAR_URL, resolveAvatarUrl } from '../../utils/assets.ts';
 
 export type NavTab =
   | 'dashboard'
@@ -48,7 +50,8 @@ export type NavTab =
   | 'settings'
   | 'budgets'
   | 'goals'
-  | 'debts';
+  | 'debts'
+  | 'admin';
 
 interface SidebarProps {
   currentTab: NavTab;
@@ -188,6 +191,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Navigation Groups */}
           <nav className="flex-1 overflow-y-auto space-y-3 pr-0.5">
+            {user?.isSuperAdmin === true && (
+              <div className="pb-2 border-b border-slate-200/80 dark:border-white/[0.08]">
+                {renderNavItem({ id: 'admin', label: 'Admin Panel', icon: ShieldCheck })}
+              </div>
+            )}
+
             <div className="space-y-1">{primaryItems.map(renderNavItem)}</div>
 
             <div className="border-t border-slate-200/80 dark:border-white/[0.08] pt-3 space-y-1">
@@ -232,11 +241,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <img
                     key={user.avatarUrl || 'default-avatar'}
-                    src={user.avatarUrl || '/src/assets/images/avatar_user_profile_1794280921902.jpg'}
+                    src={resolveAvatarUrl(user.avatarUrl)}
                     alt={user.fullName}
                     referrerPolicy="no-referrer"
                     onError={(e) => {
-                      e.currentTarget.src = '/src/assets/images/avatar_user_profile_1794280921902.jpg';
+                      e.currentTarget.src = DEFAULT_AVATAR_URL;
                     }}
                     className="w-8 h-8 rounded-full object-cover shrink-0 border border-emerald-500/30"
                   />

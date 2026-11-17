@@ -30,15 +30,29 @@ import {
   FinancialHealthScore,
   FinancialForecast,
   CurrencyCode,
+  AdminOverviewData,
+  AdminUserSummary,
+  AdminAuditLog,
+  AdminSubscriptionsData,
+  AdminRevenueData,
+  AdminAiAnalyticsData,
+  AdminSystemHealthData,
+  AppRuntimeConfig,
+  SubscriptionEvent,
 } from '../types/finance.ts';
 
 const TOKEN_KEY = 'hisobot_auth_token';
+const ADMIN_UNLOCK_TOKEN_KEY = 'hisobot_admin_unlock_token';
 
 class ApiService {
   private token: string | null = null;
+  private adminUnlockToken: string | null = null;
 
   constructor() {
     this.token = localStorage.getItem(TOKEN_KEY);
+    if (typeof sessionStorage !== 'undefined') {
+      this.adminUnlockToken = sessionStorage.getItem(ADMIN_UNLOCK_TOKEN_KEY);
+    }
   }
 
   setToken(token: string | null) {
@@ -47,6 +61,7 @@ class ApiService {
       localStorage.setItem(TOKEN_KEY, token);
     } else {
       localStorage.removeItem(TOKEN_KEY);
+      this.setAdminUnlockToken(null);
     }
   }
 
@@ -55,6 +70,24 @@ class ApiService {
       this.token = localStorage.getItem(TOKEN_KEY);
     }
     return this.token;
+  }
+
+  setAdminUnlockToken(token: string | null) {
+    this.adminUnlockToken = token;
+    if (typeof sessionStorage !== 'undefined') {
+      if (token) {
+        sessionStorage.setItem(ADMIN_UNLOCK_TOKEN_KEY, token);
+      } else {
+        sessionStorage.removeItem(ADMIN_UNLOCK_TOKEN_KEY);
+      }
+    }
+  }
+
+  getAdminUnlockToken(): string | null {
+    if (!this.adminUnlockToken && typeof sessionStorage !== 'undefined') {
+      this.adminUnlockToken = sessionStorage.getItem(ADMIN_UNLOCK_TOKEN_KEY);
+    }
+    return this.adminUnlockToken;
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -68,6 +101,13 @@ class ApiService {
       headers['Authorization'] = `Bearer ${currentToken}`;
     }
 
+    if (endpoint.startsWith('/api/admin')) {
+      const unlockToken = this.getAdminUnlockToken();
+      if (unlockToken) {
+        headers['X-Admin-Code-Token'] = unlockToken;
+      }
+    }
+
     const res = await fetch(endpoint, {
       ...options,
       headers,
@@ -75,13 +115,23 @@ class ApiService {
 
     if (!res.ok) {
       let errorMsg = `Server xatosi: ${res.status}`;
+      let errorCode: string | undefined;
       try {
         const data = await res.json();
         if (data.error) errorMsg = data.error;
+        if (typeof data.code === 'string') errorCode = data.code;
       } catch {
         // ignore
       }
-      throw new Error(errorMsg);
+      if (res.status === 401 || errorCode === 'ADMIN_CODE_REQUIRED' || errorCode === 'ADMIN_CODE_NOT_CONFIGURED') {
+        if (endpoint.startsWith('/api/admin')) {
+          this.setAdminUnlockToken(null);
+        }
+      }
+      const err = new Error(errorMsg) as Error & { code?: string; status?: number };
+      err.code = errorCode;
+      err.status = res.status;
+      throw err;
     }
 
     return res.json();
@@ -380,6 +430,7 @@ class ApiService {
     callbacks?: {
       onDelta?: (textChunk: string, accumulatedText: string) => void;
       onRows?: (structuredRows: NonNullable<AIChatMessage['structuredRows']>) => void;
+      signal?: AbortSignal;
     }
   ): Promise<{
     reply: string;
@@ -400,17 +451,23 @@ class ApiService {
       method: 'POST',
       headers,
       body: JSON.stringify({ message, history, language }),
+      signal: callbacks?.signal,
     });
 
     if (!res.ok) {
       let errorMsg = `Server xatosi: ${res.status}`;
+      let errorCode: string | undefined;
       try {
         const data = await res.json();
         if (data.error) errorMsg = data.error;
+        if (typeof data.code === 'string') errorCode = data.code;
       } catch {
         // ignore
       }
-      throw new Error(errorMsg);
+      const err = new Error(errorMsg) as Error & { status?: number; code?: string };
+      err.status = res.status;
+      if (errorCode) err.code = errorCode;
+      throw err;
     }
 
     if (!res.body) {
@@ -446,7 +503,12 @@ class ApiService {
       }
 
       if (dataLines.length === 0) return;
-      const payload = JSON.parse(dataLines.join('\n')) as Record<string, any>;
+      let payload: Record<string, any>;
+      try {
+        payload = JSON.parse(dataLines.join('\n')) as Record<string, any>;
+      } catch {
+        return;
+      }
 
       if (eventType === 'delta' && typeof payload.text === 'string') {
         accumulatedText += payload.text;
@@ -467,23 +529,27 @@ class ApiService {
       }
     };
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
 
-      let separatorIdx = buffer.search(/\r?\n\r?\n/);
-      while (separatorIdx !== -1) {
-        const frame = buffer.slice(0, separatorIdx);
-        const match = buffer.slice(separatorIdx).match(/^\r?\n\r?\n/);
-        buffer = buffer.slice(separatorIdx + (match ? match[0].length : 2));
-        processFrame(frame);
-        separatorIdx = buffer.search(/\r?\n\r?\n/);
+        let separatorIdx = buffer.search(/\r?\n\r?\n/);
+        while (separatorIdx !== -1) {
+          const frame = buffer.slice(0, separatorIdx);
+          const match = buffer.slice(separatorIdx).match(/^\r?\n\r?\n/);
+          buffer = buffer.slice(separatorIdx + (match ? match[0].length : 2));
+          processFrame(frame);
+          separatorIdx = buffer.search(/\r?\n\r?\n/);
+        }
       }
-    }
 
-    if (buffer.trim()) {
-      processFrame(buffer);
+      if (buffer.trim()) {
+        processFrame(buffer);
+      }
+    } finally {
+      reader.releaseLock();
     }
 
     if (finalResult) {
@@ -742,6 +808,142 @@ class ApiService {
   async testSendTelegram(): Promise<{ success: boolean; message: string }> {
     return this.request<{ success: boolean; message: string }>('/api/telegram/test-send', {
       method: 'POST',
+    });
+  }
+
+  // --- 9. Super Admin Console ---
+  async getAdminAccessStatus(): Promise<{
+    adminCodeConfigured: boolean;
+    unlocked: boolean;
+    expiresAt?: string;
+  }> {
+    return this.request('/api/admin/access-status');
+  }
+
+  async unlockAdminPanel(code: string): Promise<{
+    unlocked: boolean;
+    unlockToken: string;
+    expiresAt: string;
+  }> {
+    const res = await this.request<{
+      unlocked: boolean;
+      unlockToken: string;
+      expiresAt: string;
+    }>('/api/admin/unlock', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+    if (res.unlockToken) {
+      this.setAdminUnlockToken(res.unlockToken);
+    }
+    return res;
+  }
+
+  async lockAdminPanel(): Promise<{ locked: boolean }> {
+    try {
+      return await this.request<{ locked: boolean }>('/api/admin/lock', {
+        method: 'POST',
+      });
+    } finally {
+      this.setAdminUnlockToken(null);
+    }
+  }
+
+  async getAdminOverview(): Promise<AdminOverviewData> {
+    return this.request<AdminOverviewData>('/api/admin/overview');
+  }
+
+  async getAdminUsers(params?: {
+    search?: string;
+    plan?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ users: AdminUserSummary[]; total: number; page: number; limit: number }> {
+    const query = new URLSearchParams();
+    if (params?.search) query.set('search', params.search);
+    if (params?.plan) query.set('plan', params.plan);
+    if (params?.status) query.set('status', params.status);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    return this.request(`/api/admin/users?${query.toString()}`);
+  }
+
+  async adminUpdateUserSubscription(
+    userId: string,
+    payload: { plan: 'free' | 'pro' | 'business'; durationMonths: number; reason: string; confirm: boolean }
+  ): Promise<{ user: AdminUserSummary; subscriptionEvent: SubscriptionEvent; auditLog: AdminAuditLog }> {
+    return this.request(`/api/admin/users/${encodeURIComponent(userId)}/subscription`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async adminSetUserStatus(
+    userId: string,
+    payload: { suspended: boolean; reason: string; confirm: boolean }
+  ): Promise<{ user: AdminUserSummary; clearedSessions: number; auditLog: AdminAuditLog }> {
+    return this.request(`/api/admin/users/${encodeURIComponent(userId)}/status`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async adminRevokeUserSessions(
+    userId: string,
+    payload: { reason: string; confirm: boolean }
+  ): Promise<{ clearedSessions: number; auditLog: AdminAuditLog }> {
+    return this.request(`/api/admin/users/${encodeURIComponent(userId)}/revoke-sessions`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getAdminSubscriptions(params?: { page?: number; limit?: number }): Promise<AdminSubscriptionsData> {
+    const query = new URLSearchParams();
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    return this.request<AdminSubscriptionsData>(`/api/admin/subscriptions?${query.toString()}`);
+  }
+
+  async getAdminRevenue(): Promise<AdminRevenueData> {
+    return this.request<AdminRevenueData>('/api/admin/revenue');
+  }
+
+  async getAdminAiAnalytics(): Promise<AdminAiAnalyticsData> {
+    return this.request<AdminAiAnalyticsData>('/api/admin/ai-analytics');
+  }
+
+  async getAdminSystemHealth(): Promise<AdminSystemHealthData> {
+    return this.request<AdminSystemHealthData>('/api/admin/system-health');
+  }
+
+  async getAdminAuditLogs(params?: {
+    action?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ logs: AdminAuditLog[]; total: number; page: number; limit: number }> {
+    const query = new URLSearchParams();
+    if (params?.action) query.set('action', params.action);
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    return this.request(`/api/admin/audit-logs?${query.toString()}`);
+  }
+
+  async getAdminConfig(): Promise<{ config: AppRuntimeConfig }> {
+    return this.request<{ config: AppRuntimeConfig }>('/api/admin/config');
+  }
+
+  async updateAdminConfig(payload: {
+    config: Partial<AppRuntimeConfig>;
+    reason: string;
+    confirm: boolean;
+  }): Promise<{ config: AppRuntimeConfig; auditLog: AdminAuditLog }> {
+    return this.request('/api/admin/config', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
     });
   }
 }

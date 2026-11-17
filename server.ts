@@ -10,6 +10,8 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 import dotenv from 'dotenv';
 import { getRepository } from './src/server/async-repository.ts';
+import { attachServerAdminFlag, isVerifiedSuperAdminUser } from './src/server/admin-policy.ts';
+import { createAdminRouter } from './src/server/admin-routes.ts';
 import { checkAuthRateLimit } from './src/server/supabase-auth.ts';
 import { closeSharedPostgresStorage, sanitizePgError, validateDatabaseConfiguration } from './src/server/supabase-storage.ts';
 import {
@@ -20,9 +22,9 @@ import {
   calculateFinancialForecast,
 } from './src/server/ai.ts';
 import {
+  GEMINI_FAST_MODEL,
   GEMINI_MODEL,
   checkUserRateLimit,
-  getLastGeminiDiagnostic,
   invalidateUserAiContext,
   isGeminiConfigured,
   parseReceiptWithGemini,
@@ -32,7 +34,7 @@ import {
   streamGeminiAssistantTurn,
   type GeminiHistoryItem,
 } from './src/server/gemini.ts';
-import type { UserProfile, FinancialSummary, AIProposedAction } from './src/types/finance.ts';
+import type { AiUsageEvent, UserProfile, FinancialSummary, AIProposedAction } from './src/types/finance.ts';
 
 dotenv.config();
 
@@ -110,7 +112,7 @@ export function createApp() {
       if (allowed.has(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Vary', 'Origin');
-        res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Idempotency-Key');
+        res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Idempotency-Key, X-Admin-Code-Token');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       }
       if (req.method === 'OPTIONS') {
@@ -122,24 +124,48 @@ export function createApp() {
 
   app.use(express.json({ limit: '6mb' }));
 
+  const recordAiUsageSafe = (event: Omit<AiUsageEvent, 'id' | 'createdAt'>) => {
+    void Promise.resolve(getRepository().recordAiUsageEvent(event)).catch(() => {
+      // Telemetry failure must never interrupt AI user workflows
+    });
+  };
+
   // Auth Middleware: extracts user strictly from Bearer Token
   const authMiddleware = asyncHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
 
     if (token) {
-      const user = await getRepository().getUserByToken(token);
+      const repo = getRepository();
+      const user = await repo.getUserByToken(token);
       if (user) {
-        req.user = user;
+        const verifiedUser = attachServerAdminFlag(user);
+        req.user = verifiedUser;
+
+        const fullPath = req.originalUrl || req.path;
+        if (
+          !fullPath.startsWith('/api/auth') &&
+          !fullPath.startsWith('/api/admin') &&
+          fullPath !== '/api/health' &&
+          !isVerifiedSuperAdminUser(verifiedUser)
+        ) {
+          const cfg = await repo.getAppConfig().catch(() => null);
+          if (cfg?.maintenanceMode) {
+            return res.status(503).json({
+              error: 'Tizim texnik xizmat koʻrsatish rejimida. Iltimos, birozdan soʻng qayta urining.',
+            });
+          }
+        }
+
         if (
           req.method !== 'GET' &&
-          !req.path.startsWith('/api/ai/assistant') &&
-          !req.path.startsWith('/api/ai/chat') &&
-          !req.path.startsWith('/api/ai/parse-transaction')
+          !fullPath.startsWith('/api/ai/assistant') &&
+          !fullPath.startsWith('/api/ai/chat') &&
+          !fullPath.startsWith('/api/ai/parse-transaction')
         ) {
           res.on('finish', () => {
             if (res.statusCode < 400) {
-              invalidateUserAiContext(user.id);
+              invalidateUserAiContext(verifiedUser.id);
             }
           });
         }
@@ -169,6 +195,14 @@ export function createApp() {
   app.post(
     '/api/auth/register',
     asyncHandler(async (req: Request, res: Response) => {
+      const repo = getRepository();
+      const cfg = await repo.getAppConfig().catch(() => null);
+      if (cfg && !cfg.registrationEnabled) {
+        return res.status(403).json({
+          error: 'Yangi foydalanuvchilar roʻyxatdan oʻtishi vaqtincha toʻxtatilgan',
+        });
+      }
+
       const clientKey = `${req.ip || 'unknown'}`;
       const limit = checkAuthRateLimit('register', clientKey);
       if (!limit.allowed) {
@@ -187,8 +221,11 @@ export function createApp() {
       if (password.length < 6) {
         return res.status(400).json({ error: 'Parol kamida 6 belgidan iborat boʻlishi kerak' });
       }
-      const result = await getRepository().registerUser(email, password, fullName);
-      res.json(result);
+      const result = await repo.registerUser(email, password, fullName);
+      res.json({
+        user: attachServerAdminFlag(result.user),
+        token: result.token,
+      });
     })
   );
 
@@ -208,12 +245,15 @@ export function createApp() {
         return res.status(400).json({ error: 'Elektron pochta va parolni kiriting' });
       }
       const result = await getRepository().loginUser(cleanEmail, password);
-      res.json(result);
+      res.json({
+        user: attachServerAdminFlag(result.user),
+        token: result.token,
+      });
     })
   );
 
   app.get('/api/auth/me', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-    res.json({ user: req.user });
+    res.json({ user: attachServerAdminFlag(req.user!) });
   });
 
   app.post(
@@ -274,7 +314,7 @@ export function createApp() {
     authMiddleware,
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
       const updated = await getRepository().updateProfile(req.user!.id, req.body || {});
-      res.json({ user: updated });
+      res.json({ user: attachServerAdminFlag(updated) });
     })
   );
 
@@ -704,9 +744,15 @@ export function createApp() {
       } else if (period === 'this_year') {
         start = `${now.getFullYear()}-01-01`;
         end = `${now.getFullYear()}-12-31`;
-      } else if (period === 'custom' && startDate && endDate) {
-        start = String(startDate);
-        end = String(endDate);
+      } else if (period === 'custom') {
+        if (!isValidYmdDate(startDate) || !isValidYmdDate(endDate)) {
+          return res.status(400).json({ error: 'Maxsus davr sanalari notoʻgʻri (YYYY-MM-DD)' });
+        }
+        start = startDate.trim();
+        end = endDate.trim();
+        if (start > end) {
+          [start, end] = [end, start];
+        }
       } else {
         start = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
         const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -802,34 +848,62 @@ export function createApp() {
   );
 
   // --- AI ASSISTANT ROUTES ---
-  app.get('/api/ai/status', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-    if (req.user?.id) {
-      prewarmUserAiContext(req.user.id);
-    }
-    res.json({
-      configured: isGeminiConfigured(),
-      model: GEMINI_MODEL,
-      lastDiagnostic: getLastGeminiDiagnostic(),
-    });
-  });
+  app.get(
+    '/api/ai/status',
+    authMiddleware,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      if (req.user?.id) {
+        prewarmUserAiContext(req.user.id);
+      }
+      const cfg = await getRepository().getAppConfig().catch(() => null);
+      res.json({
+        configured: isGeminiConfigured(),
+        model: cfg?.aiFastModel || GEMINI_MODEL,
+        aiAssistantEnabled: cfg ? cfg.aiAssistantEnabled : true,
+      });
+    })
+  );
 
   app.post(
     '/api/ai/assistant',
     authMiddleware,
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const started = Date.now();
+      const userId = req.user!.id;
+      const cfg = await getRepository().getAppConfig().catch(() => null);
+      const preferredModel = cfg?.aiFastModel || GEMINI_FAST_MODEL;
+      const rateMax = cfg?.aiRateLimitPerMin || 30;
+      const langHint = typeof req.body?.language === 'string' ? req.body.language : 'uz';
+
+      if (cfg && !cfg.aiAssistantEnabled) {
+        return res.status(503).json({
+          error: 'AI yordamchisi administrator tomonidan vaqtincha oʻchirilgan.',
+        });
+      }
+
       try {
-        const userId = req.user!.id;
-        const rate = checkUserRateLimit(userId);
+        const rate = checkUserRateLimit(userId, rateMax);
         if (!rate.allowed) {
+          recordAiUsageSafe({
+            userId,
+            endpoint: '/api/ai/assistant',
+            model: preferredModel,
+            source: 'fallback',
+            status: 'error',
+            latencyMs: Date.now() - started,
+            promptChars: typeof req.body?.message === 'string' ? req.body.message.length : 0,
+            completionChars: 0,
+            language: langHint,
+            errorCode: 'RATE_LIMITED',
+          });
           return res.status(429).json({
             error: `Juda koʻp soʻrov yuborildi. Iltimos, ${rate.retryAfterSec || 10} soniyadan keyin qayta urinib koʻring.`,
           });
         }
 
-        const { message, history, language } = req.body as {
+        const { message, history } = req.body as {
           message?: unknown;
           history?: unknown;
-          language?: unknown;
         };
 
         if (typeof message !== 'string' || !message.trim()) {
@@ -848,16 +922,40 @@ export function createApp() {
               .slice(-12)
           : [];
 
-        const langHint = typeof language === 'string' ? language : 'uz';
         const result = await runGeminiAssistantTurn({
           user: req.user!,
           message: message.trim(),
           history: safeHistory,
           language: langHint,
+          preferredFastModel: preferredModel,
+        });
+
+        recordAiUsageSafe({
+          userId,
+          endpoint: '/api/ai/assistant',
+          model: preferredModel,
+          source: result.source,
+          status: result.source === 'fallback' ? 'fallback' : 'success',
+          latencyMs: Date.now() - started,
+          promptChars: message.trim().length,
+          completionChars: result.reply.length,
+          language: langHint,
         });
 
         res.json(result);
       } catch (err: any) {
+        recordAiUsageSafe({
+          userId,
+          endpoint: '/api/ai/assistant',
+          model: preferredModel,
+          source: 'fallback',
+          status: 'error',
+          latencyMs: Date.now() - started,
+          promptChars: typeof req.body?.message === 'string' ? req.body.message.length : 0,
+          completionChars: 0,
+          language: langHint,
+          errorCode: 'ASSISTANT_ERROR',
+        });
         console.error('[HISOBOT AI] /api/ai/assistant unexpected failure:', err?.message || 'unknown');
         res.status(500).json({ error: 'AI yordamchisi javob bera olmadi. Iltimos, birozdan keyin urinib koʻring.' });
       }
@@ -868,18 +966,41 @@ export function createApp() {
     '/api/ai/assistant/stream',
     authMiddleware,
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const started = Date.now();
       const userId = req.user!.id;
-      const rate = checkUserRateLimit(userId);
+      const cfg = await getRepository().getAppConfig().catch(() => null);
+      const preferredModel = cfg?.aiFastModel || GEMINI_FAST_MODEL;
+      const rateMax = cfg?.aiRateLimitPerMin || 30;
+      const langHint = typeof req.body?.language === 'string' ? req.body.language : 'uz';
+
+      if (cfg && !cfg.aiAssistantEnabled) {
+        return res.status(503).json({
+          error: 'AI yordamchisi administrator tomonidan vaqtincha oʻchirilgan.',
+        });
+      }
+
+      const rate = checkUserRateLimit(userId, rateMax);
       if (!rate.allowed) {
+        recordAiUsageSafe({
+          userId,
+          endpoint: '/api/ai/assistant/stream',
+          model: preferredModel,
+          source: 'fallback',
+          status: 'error',
+          latencyMs: Date.now() - started,
+          promptChars: typeof req.body?.message === 'string' ? req.body.message.length : 0,
+          completionChars: 0,
+          language: langHint,
+          errorCode: 'RATE_LIMITED',
+        });
         return res.status(429).json({
           error: `Juda koʻp soʻrov yuborildi. Iltimos, ${rate.retryAfterSec || 10} soniyadan keyin qayta urinib koʻring.`,
         });
       }
 
-      const { message, history, language } = req.body as {
+      const { message, history } = req.body as {
         message?: unknown;
         history?: unknown;
-        language?: unknown;
       };
 
       if (typeof message !== 'string' || !message.trim()) {
@@ -898,7 +1019,6 @@ export function createApp() {
             .slice(-8)
         : [];
 
-      const langHint = typeof language === 'string' ? language : 'uz';
       const abortController = new AbortController();
       req.on('aborted', () => {
         abortController.abort();
@@ -927,6 +1047,7 @@ export function createApp() {
             message: message.trim(),
             history: safeHistory,
             language: langHint,
+            preferredFastModel: preferredModel,
             signal: abortController.signal,
           },
           {
@@ -935,9 +1056,33 @@ export function createApp() {
           }
         );
 
+        recordAiUsageSafe({
+          userId,
+          endpoint: '/api/ai/assistant/stream',
+          model: preferredModel,
+          source: result.source,
+          status: result.source === 'fallback' ? 'fallback' : 'success',
+          latencyMs: Date.now() - started,
+          promptChars: message.trim().length,
+          completionChars: result.reply.length,
+          language: langHint,
+        });
+
         sendEvent('done', result);
         if (!res.writableEnded) res.end();
       } catch (err: any) {
+        recordAiUsageSafe({
+          userId,
+          endpoint: '/api/ai/assistant/stream',
+          model: preferredModel,
+          source: 'fallback',
+          status: 'error',
+          latencyMs: Date.now() - started,
+          promptChars: message.trim().length,
+          completionChars: 0,
+          language: langHint,
+          errorCode: 'STREAM_ERROR',
+        });
         console.error('[HISOBOT AI] /api/ai/assistant/stream unexpected failure:', err?.message || 'unknown');
         sendEvent('error', {
           error: 'AI yordamchisi javob bera olmadi. Iltimos, birozdan keyin urinib koʻring.',
@@ -1053,15 +1198,34 @@ export function createApp() {
     '/api/ai/parse-transaction',
     authMiddleware,
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const started = Date.now();
       const { text, language } = req.body || {};
       if (!text || typeof text !== 'string') {
         return res.status(400).json({ error: 'Matn kiritilmagan' });
       }
+      const cfg = await getRepository().getAppConfig().catch(() => null);
+      if (cfg && !cfg.aiAssistantEnabled) {
+        return res.status(503).json({
+          error: 'AI yordamchisi administrator tomonidan vaqtincha oʻchirilgan.',
+        });
+      }
+      const langStr = typeof language === 'string' ? language : 'uz';
       const categories = await getRepository().getCategories(req.user!.id);
       const geminiParsed = isGeminiConfigured()
-        ? await parseTransactionWithGemini(text, categories, typeof language === 'string' ? language : 'uz')
+        ? await parseTransactionWithGemini(text, categories, langStr)
         : null;
       const parsed = geminiParsed || (await parseUzbekTransactionAI(text, categories, language));
+      recordAiUsageSafe({
+        userId: req.user!.id,
+        endpoint: '/api/ai/parse-transaction',
+        model: cfg?.aiFastModel || GEMINI_FAST_MODEL,
+        source: geminiParsed ? 'gemini' : 'fallback',
+        status: geminiParsed ? 'success' : 'fallback',
+        latencyMs: Date.now() - started,
+        promptChars: text.length,
+        completionChars: JSON.stringify(parsed).length,
+        language: langStr,
+      });
       res.json({ parsed });
     })
   );
@@ -1070,12 +1234,35 @@ export function createApp() {
     '/api/ai/chat',
     authMiddleware,
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const started = Date.now();
       const { query, history, language } = req.body || {};
       if (!query || typeof query !== 'string') return res.status(400).json({ error: 'Savol kiritilmagan' });
 
+      const cfg = await getRepository().getAppConfig().catch(() => null);
+      if (cfg && !cfg.aiAssistantEnabled) {
+        return res.status(503).json({
+          error: 'AI yordamchisi administrator tomonidan vaqtincha oʻchirilgan.',
+        });
+      }
+      const preferredModel = cfg?.aiFastModel || GEMINI_FAST_MODEL;
+      const rateMax = cfg?.aiRateLimitPerMin || 30;
+      const langStr = typeof language === 'string' ? language : 'uz';
+
       if (isGeminiConfigured()) {
-        const rate = checkUserRateLimit(req.user!.id);
+        const rate = checkUserRateLimit(req.user!.id, rateMax);
         if (!rate.allowed) {
+          recordAiUsageSafe({
+            userId: req.user!.id,
+            endpoint: '/api/ai/chat',
+            model: preferredModel,
+            source: 'fallback',
+            status: 'error',
+            latencyMs: Date.now() - started,
+            promptChars: query.length,
+            completionChars: 0,
+            language: langStr,
+            errorCode: 'RATE_LIMITED',
+          });
           return res.status(429).json({
             error: `Juda koʻp soʻrov yuborildi. ${rate.retryAfterSec || 10} soniyadan keyin urinib koʻring.`,
           });
@@ -1084,7 +1271,19 @@ export function createApp() {
           user: req.user!,
           message: query,
           history: Array.isArray(history) ? history : [],
-          language: typeof language === 'string' ? language : 'uz',
+          language: langStr,
+          preferredFastModel: preferredModel,
+        });
+        recordAiUsageSafe({
+          userId: req.user!.id,
+          endpoint: '/api/ai/chat',
+          model: preferredModel,
+          source: turn.source,
+          status: turn.source === 'fallback' ? 'fallback' : 'success',
+          latencyMs: Date.now() - started,
+          promptChars: query.length,
+          completionChars: turn.reply.length,
+          language: langStr,
         });
         return res.json({
           answer: turn.reply,
@@ -1181,6 +1380,18 @@ export function createApp() {
           date: t.date,
           description: t.description,
         })),
+      });
+
+      recordAiUsageSafe({
+        userId,
+        endpoint: '/api/ai/chat',
+        model: preferredModel,
+        source: 'fallback',
+        status: 'fallback',
+        latencyMs: Date.now() - started,
+        promptChars: query.length,
+        completionChars: answer.length,
+        language: langStr,
       });
 
       res.json({ answer, source: 'fallback' });
@@ -1531,6 +1742,7 @@ export function createApp() {
     '/api/receipts/scan',
     authMiddleware,
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const started = Date.now();
       const { imageBase64OrText } = req.body || {};
       const repo = getRepository();
       const [categories, existingReceipts] = await Promise.all([
@@ -1541,6 +1753,17 @@ export function createApp() {
         ? await parseReceiptWithGemini(imageBase64OrText || '', categories, existingReceipts)
         : null;
       const parsed = geminiReceipt || (await parseReceiptAI(imageBase64OrText || '', categories, existingReceipts));
+      recordAiUsageSafe({
+        userId: req.user!.id,
+        endpoint: '/api/receipts/scan',
+        model: GEMINI_FAST_MODEL,
+        source: geminiReceipt ? 'gemini' : 'fallback',
+        status: geminiReceipt ? 'success' : 'fallback',
+        latencyMs: Date.now() - started,
+        promptChars: typeof imageBase64OrText === 'string' ? imageBase64OrText.length : 0,
+        completionChars: JSON.stringify(parsed).length,
+        language: 'uz',
+      });
       res.json({ parsed });
     })
   );
@@ -1552,13 +1775,18 @@ export function createApp() {
       const repo = getRepository();
       const receipt = await repo.saveReceipt(req.user!.id, req.body || {});
       if (req.body?.createTransaction) {
+        const categories = await repo.getCategories(req.user!.id);
+        const suggestedLower = String(receipt.categorySuggested || '').trim().toLowerCase();
+        const matchedCat = categories.find(
+          (c) => c.name.trim().toLowerCase() === suggestedLower
+        );
         const tx = await repo.addTransaction(
           req.user!.id,
           {
             type: 'expense',
             amount: receipt.totalAmount,
-            categoryId: 'exp_food',
-            categoryName: receipt.categorySuggested,
+            categoryId: matchedCat?.id || 'exp_other',
+            categoryName: matchedCat?.name || receipt.categorySuggested || 'Boshqa xarajatlar',
             date: receipt.date,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             description: `${receipt.merchantName} xaridi`,
@@ -1686,8 +1914,11 @@ export function createApp() {
     });
   });
 
+  // --- 9. SUPER ADMIN ROUTES ---
+  app.use('/api/admin', createAdminRouter(authMiddleware));
+
   // Global API error handler — prevents Express 4 unhandled promise rejections & never leaks secrets/DSNs
-  app.use('/api', (err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  app.use('/api', (err: unknown, req: AuthenticatedRequest, res: Response, _next: NextFunction) => {
     const safeMsg = sanitizePgError(err);
     const pgCode = (err as { code?: string })?.code;
     const isPgInfraError =
@@ -1700,10 +1931,23 @@ export function createApp() {
         ? 504
         : isPgInfraError
         ? 503
+        : safeMsg.toLowerCase().includes('bloklangan')
+        ? 403
         : 400;
     if (status >= 500) {
       console.error('[HISOBOT API] Server error:', safeMsg);
     }
+    void Promise.resolve(
+      getRepository().recordApiErrorEvent({
+        method: req.method,
+        path: (req.originalUrl || req.path || '/api').split('?')[0].slice(0, 180),
+        statusCode: status,
+        errorMessage: safeMsg.slice(0, 260),
+        userId: req.user?.id,
+      })
+    ).catch(() => {
+      // Telemetry write must not block error response
+    });
     res.status(status).json({ error: safeMsg });
   });
 

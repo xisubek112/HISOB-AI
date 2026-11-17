@@ -33,6 +33,7 @@ import {
 import { useAuth } from '../../context/AuthContext.tsx';
 import { api } from '../../services/api.ts';
 import { CurrencyCode } from '../../types/finance.ts';
+import { DEFAULT_AVATAR_URL, isDefaultAvatar, resolveAvatarUrl } from '../../utils/assets.ts';
 import {
   Badge,
   Button,
@@ -69,6 +70,7 @@ import {
 interface SettingsViewProps {
   onOpenPremiumModal?: () => void;
   onRequireAuth?: () => void;
+  onOpenAdminPanel?: () => void;
 }
 
 type SettingsTab = 'general' | 'notifications' | 'security' | 'privacy';
@@ -89,8 +91,6 @@ const BUDGET_PRESETS: { label: string; value: number }[] = [
   { label: '10 mln', value: 10_000_000 },
   { label: '20 mln', value: 20_000_000 },
 ];
-
-const DEFAULT_AVATAR_URL = '/src/assets/images/avatar_user_profile_1794280921902.jpg';
 
 const compressAvatarImage = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -152,6 +152,7 @@ const compressAvatarImage = (file: File): Promise<string> =>
 export const SettingsView: React.FC<SettingsViewProps> = ({
   onOpenPremiumModal,
   onRequireAuth,
+  onOpenAdminPanel,
 }) => {
   const { user, updateUser, logout, logoutAll, theme, toggleTheme } = useAuth();
   const toast = useToast();
@@ -259,7 +260,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleResetAvatar = async () => {
     setAvatarSaving(true);
     try {
-      await updateUser({ avatarUrl: DEFAULT_AVATAR_URL });
+      await updateUser({ avatarUrl: '' });
       setAvatarError(false);
       setAvatarModalOpen(false);
       toast.success('Standart rasm qaytarildi');
@@ -510,10 +511,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 {!avatarError ? (
                   <img
                     key={user?.avatarUrl || 'default-hero-avatar'}
-                    src={user?.avatarUrl || DEFAULT_AVATAR_URL}
+                    src={resolveAvatarUrl(user?.avatarUrl)}
                     alt={user?.fullName || 'Profil'}
                     referrerPolicy="no-referrer"
-                    onError={() => setAvatarError(true)}
+                    onError={(e) => {
+                      if (e.currentTarget.src !== DEFAULT_AVATAR_URL) {
+                        e.currentTarget.src = DEFAULT_AVATAR_URL;
+                      } else {
+                        setAvatarError(true);
+                      }
+                    }}
                     className="w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-2xl object-cover border-2 border-emerald-500/45 shadow-[0_8px_20px_rgba(16,185,129,0.20)] transition-transform duration-200 group-hover:scale-[1.03]"
                   />
                 ) : (
@@ -566,6 +573,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {user?.isSuperAdmin === true && onOpenAdminPanel && (
+                <button
+                  type="button"
+                  onClick={onOpenAdminPanel}
+                  className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 py-2 rounded-xl border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-900 dark:text-emerald-200 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-300" />
+                  <span>Admin Panel</span>
+                </button>
+              )}
+
               {onOpenPremiumModal && (
                 <button
                   type="button"
@@ -1323,10 +1341,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {!avatarError ? (
               <img
                 key={`modal-${user?.avatarUrl || 'default-avatar'}`}
-                src={user?.avatarUrl || DEFAULT_AVATAR_URL}
+                src={resolveAvatarUrl(user?.avatarUrl)}
                 alt={user?.fullName || 'Profil rasmi'}
                 referrerPolicy="no-referrer"
-                onError={() => setAvatarError(true)}
+                onError={(e) => {
+                  if (e.currentTarget.src !== DEFAULT_AVATAR_URL) {
+                    e.currentTarget.src = DEFAULT_AVATAR_URL;
+                  } else {
+                    setAvatarError(true);
+                  }
+                }}
                 className="w-28 h-28 rounded-2xl object-cover border-2 border-emerald-500/45 shadow-[0_10px_28px_rgba(16,185,129,0.22)]"
               />
             ) : (
@@ -1353,7 +1377,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {avatarSaving ? 'Yuklanmoqda...' : 'Galereyadan rasm tanlash'}
             </Button>
 
-            {user?.avatarUrl && user.avatarUrl !== DEFAULT_AVATAR_URL && (
+            {user?.avatarUrl && !isDefaultAvatar(user.avatarUrl) && (
               <Button
                 type="button"
                 variant="outline"

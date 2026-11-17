@@ -15,15 +15,18 @@ interface AuthModalProps {
   initialMode?: 'login' | 'register' | 'forgot';
 }
 
+const QUICK_LOGIN_EMAIL = 'xisugamer@gmail.com';
+const QUICK_LOGIN_PASS = 'Admin123';
+
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
   initialMode = 'login',
 }) => {
-  const { login, register, loginDemo } = useAuth();
+  const { login, register } = useAuth();
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(initialMode);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(initialMode === 'login' ? QUICK_LOGIN_EMAIL : '');
+  const [password, setPassword] = useState(initialMode === 'login' ? QUICK_LOGIN_PASS : '');
   const [fullName, setFullName] = useState('');
   const [resetCode, setResetCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -35,6 +38,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     setMode(initialMode);
+    if (initialMode === 'login') {
+      setEmail((prev) => prev || QUICK_LOGIN_EMAIL);
+      setPassword((prev) => prev || QUICK_LOGIN_PASS);
+    } else {
+      setEmail('');
+      setPassword('');
+    }
     setError('');
     setSuccessMsg('');
     setStepForgot('send');
@@ -76,14 +86,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleDemo = async () => {
+  const handleQuickLogin = async () => {
+    setEmail(QUICK_LOGIN_EMAIL);
+    setPassword(QUICK_LOGIN_PASS);
     setLoading(true);
     setError('');
     try {
-      await loginDemo();
+      await login(QUICK_LOGIN_EMAIL, QUICK_LOGIN_PASS);
       onClose();
     } catch (e: any) {
-      setError(e.message || 'Demo kirishda xatolik');
+      setError(e.message || 'Kirishda xatolik yuz berdi');
     } finally {
       setLoading(false);
     }
@@ -226,10 +238,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </Button>
         </form>
 
-        {/* Demo Fast Login */}
+        {/* Quick Account Login */}
         <div className="pt-4 border-t border-slate-200/70 dark:border-white/[0.08] text-center space-y-2">
           <p className="text-[11px] text-slate-500 dark:text-slate-400">
-            Tezkor sinov uchun namunaviy hisob:
+            Tezkor kirish hisobi: <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">{QUICK_LOGIN_EMAIL}</span> · Parol: <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">{QUICK_LOGIN_PASS}</span>
           </p>
           <Button
             variant="outline"
@@ -237,9 +249,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             fullWidth
             disabled={loading}
             leadingIcon={<Zap className="w-4 h-4 text-emerald-500" />}
-            onClick={handleDemo}
+            onClick={handleQuickLogin}
           >
-            Demo hisob bilan sinash (Anvar Qodirov)
+            {QUICK_LOGIN_EMAIL} bilan kirish
           </Button>
         </div>
 
@@ -252,6 +264,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 type="button"
                 onClick={() => {
                   setMode('register');
+                  setEmail('');
+                  setPassword('');
                   setError('');
                 }}
                 className="text-emerald-600 dark:text-emerald-400 font-semibold hover:underline cursor-pointer"
@@ -266,6 +280,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 type="button"
                 onClick={() => {
                   setMode('login');
+                  setEmail(QUICK_LOGIN_EMAIL);
+                  setPassword(QUICK_LOGIN_PASS);
                   setError('');
                 }}
                 className="text-emerald-600 dark:text-emerald-400 font-semibold hover:underline cursor-pointer"

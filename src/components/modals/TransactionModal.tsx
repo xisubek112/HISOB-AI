@@ -55,6 +55,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
+    if (!isOpen) return;
     setError('');
     setLocationTag('');
     if (editingTransaction) {
@@ -72,19 +73,24 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     } else {
       setType(initialType);
       setAmount('');
+      setCategoryId('');
+      setCategoryName('');
       setDate(getTodayDateString());
       setTime(getCurrentTimeString());
       setDescription('');
       setPaymentMethod('card');
       setNotes('');
-
-      const firstCat = categories.find((c) => c.type === initialType);
-      if (firstCat) {
-        setCategoryId(firstCat.id);
-        setCategoryName(firstCat.name);
-      }
     }
-  }, [editingTransaction, initialType, isOpen, categories]);
+  }, [editingTransaction, initialType, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || editingTransaction) return;
+    const matching = categories.filter((c) => c.type === type);
+    if (matching.length > 0 && !matching.some((c) => c.id === categoryId)) {
+      setCategoryId(matching[0].id);
+      setCategoryName(matching[0].name);
+    }
+  }, [isOpen, editingTransaction, categories, type, categoryId]);
 
   const filteredCategories = categories.filter((c) => c.type === type);
 

@@ -40,7 +40,11 @@ import {
   useToast,
 } from '../../design-system/index.ts';
 
-export const RecurringView: React.FC = () => {
+interface RecurringViewProps {
+  onTransactionSaved?: () => void;
+}
+
+export const RecurringView: React.FC<RecurringViewProps> = ({ onTransactionSaved }) => {
   const { user } = useAuth();
   const toast = useToast();
   const [recurringList, setRecurringList] = useState<RecurringTransaction[]>([]);
@@ -184,6 +188,9 @@ export const RecurringView: React.FC = () => {
         toast.success('Toʻlov amalga oshirildi va tranzaksiyalarga yozildi');
       }
       await loadData();
+      if (res.success) {
+        onTransactionSaved?.();
+      }
     } catch (err: any) {
       toast.error(err?.message || 'Bajarishda xatolik yuz berdi');
     } finally {

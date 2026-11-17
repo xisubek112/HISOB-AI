@@ -25,6 +25,7 @@ import {
 } from '../../types/finance.ts';
 import { api } from '../../services/api.ts';
 import { formatMoney } from '../../utils/formatters.ts';
+import { DEFAULT_AVATAR_URL, resolveAvatarUrl } from '../../utils/assets.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 import {
   Badge,
@@ -308,11 +309,11 @@ export const FamilyView: React.FC = () => {
                   className="p-3.5 rounded-xl border border-slate-200/80 dark:border-white/[0.08] bg-slate-50/70 dark:bg-[#0D1927] flex items-center gap-3 min-w-0"
                 >
                   <img
-                    src={member.avatarUrl || '/src/assets/images/avatar_user_profile_1794280921902.jpg'}
+                    src={resolveAvatarUrl(member.avatarUrl)}
                     alt={member.fullName}
                     referrerPolicy="no-referrer"
                     onError={(e) => {
-                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.src = DEFAULT_AVATAR_URL;
                     }}
                     className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-white/[0.12] shrink-0"
                   />

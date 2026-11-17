@@ -28,7 +28,11 @@ import {
   useToast,
 } from '../../design-system/index.ts';
 
-export const BanksView: React.FC = () => {
+interface BanksViewProps {
+  onTransactionSaved?: () => void;
+}
+
+export const BanksView: React.FC<BanksViewProps> = ({ onTransactionSaved }) => {
   const { user } = useAuth();
   const toast = useToast();
   const [connections, setConnections] = useState<BankConnection[]>([]);
@@ -47,15 +51,15 @@ export const BanksView: React.FC = () => {
       const res = await api.getBanks();
       setConnections(res.connections || []);
       setSupportedBanks(res.supportedBanks || []);
-      if (res.supportedBanks?.length > 0 && !selectedBankId) {
-        setSelectedBankId(res.supportedBanks[0].id);
+      if (res.supportedBanks?.length > 0) {
+        setSelectedBankId((prev) => prev || res.supportedBanks[0].id);
       }
     } catch (e) {
       console.error('Failed to load banks:', e);
     } finally {
       setLoading(false);
     }
-  }, [user, selectedBankId]);
+  }, [user]);
 
   useEffect(() => {
     loadData();
@@ -67,6 +71,9 @@ export const BanksView: React.FC = () => {
       const res = await api.syncBank(id);
       toast.success(`Sinxronizatsiya yakunlandi (${res.importedCount} ta operatsiya yuklandi)`);
       await loadData();
+      if (res.importedCount > 0 && onTransactionSaved) {
+        onTransactionSaved();
+      }
     } catch (err: any) {
       toast.error(err?.message || 'Sinxronizatsiyada xatolik yuz berdi');
     } finally {

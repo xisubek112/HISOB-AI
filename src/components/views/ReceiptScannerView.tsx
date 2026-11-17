@@ -77,18 +77,37 @@ export const ReceiptScannerView: React.FC<{ onTransactionSaved?: () => void }> =
   }, [user, loadReceipts]);
 
   const handleFile = (file: File) => {
+    const isImage = file.type.startsWith('image/');
+    const isText = file.type.startsWith('text/') || file.name.toLowerCase().endsWith('.txt');
+    if (!isImage && !isText) {
+      toast.error('Faqat rasm (JPG, PNG, WEBP) yoki TXT chek faylini yuklang');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Fayl hajmi 10 MB dan oshmasligi kerak');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
-      const base64 = reader.result as string;
+      const content = reader.result as string;
       setImagePreviewError(false);
-      setSelectedImage(base64);
-      triggerScan(base64);
+      setSelectedImage(isText ? '__sample__' : content);
+      triggerScan(content);
     };
-    reader.readAsDataURL(file);
+    reader.onerror = () => {
+      toast.error('Faylni oʻqishda xatolik yuz berdi');
+    };
+    if (isText) {
+      reader.readAsText(file);
+    } else {
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (file) handleFile(file);
   };
 
@@ -192,7 +211,10 @@ Fiskal belgi: 8943180921`;
     if (!parsedResult) return;
     try {
       setSaving(true);
-      await api.saveReceipt(parsedResult);
+      await api.saveReceipt({
+        ...parsedResult,
+        createTransaction: true,
+      });
       setParsedResult(null);
       setSelectedImage(null);
       await loadReceipts();

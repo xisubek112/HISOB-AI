@@ -11,6 +11,7 @@ import {
   CreditCard,
   ArrowRight,
   Flame,
+  AlertCircle,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAuth } from '../../context/AuthContext.tsx';
@@ -24,13 +25,14 @@ interface PremiumModalProps {
 }
 
 export const PremiumModal: React.FC<PremiumModalProps> = ({ isOpen, onClose }) => {
-  const { user, updateUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const toast = useToast();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('yearly');
   const [selectedPlan, setSelectedPlan] = useState<'pro' | 'business'>('pro');
   const [paymentMethod, setPaymentMethod] = useState<'click' | 'payme' | 'uzum' | 'card'>('click');
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const isCurrentPlan = (plan: 'free' | 'pro' | 'business') => {
     if (plan === 'free' && (!user?.isPremium || user?.premiumPlan === 'free')) return true;
@@ -40,9 +42,10 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({ isOpen, onClose }) =
   const handleUpgrade = async () => {
     setLoading(true);
     setSuccessMessage(null);
+    setErrorMessage(null);
     try {
       const durationMonths = billingCycle === 'yearly' ? 12 : 1;
-      const res = await api.upgradeToPremium(selectedPlan, durationMonths);
+      await api.upgradeToPremium(selectedPlan, durationMonths);
 
       confetti({
         particleCount: 110,
@@ -51,9 +54,7 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({ isOpen, onClose }) =
         colors: ['#10b981', '#06b6d4', '#f59e0b', '#3b82f6'],
       });
 
-      if (res?.user) {
-        updateUser(res.user);
-      }
+      await refreshUser();
 
       const planLabel = selectedPlan === 'pro' ? 'PRO' : 'BUSINESS';
       setSuccessMessage(
@@ -66,7 +67,9 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({ isOpen, onClose }) =
         onClose();
       }, 2000);
     } catch (err: any) {
-      toast.error(err?.message || 'Obunani faollashtirishda xatolik yuz berdi');
+      const msg = err?.message || 'Obunani faollashtirishda xatolik yuz berdi';
+      setErrorMessage(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -171,6 +174,13 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({ isOpen, onClose }) =
             </button>
           </div>
         </div>
+
+        {errorMessage && (
+          <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs sm:text-sm font-semibold flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
 
         {successMessage && (
           <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs sm:text-sm font-semibold flex items-center gap-3">

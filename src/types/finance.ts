@@ -30,6 +30,9 @@ export interface UserProfile {
   isPremium?: boolean;
   premiumPlan?: 'free' | 'pro' | 'business';
   premiumExpiresAt?: string;
+  isSuperAdmin?: boolean;
+  isSuspended?: boolean;
+  lastActiveAt?: string;
   createdAt: string;
 }
 
@@ -441,3 +444,213 @@ export interface FinancialForecast {
   assumptions: string[];
   warning?: string;
 }
+
+// --- 10. Super Admin Panel, Telemetry & Audit Types ---
+export interface AdminAuditLog {
+  id: string;
+  adminUserId: string;
+  adminEmail: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  reason: string;
+  metadata?: Record<string, unknown>;
+  ipAddress?: string;
+  createdAt: string;
+}
+
+export interface AiUsageEvent {
+  id: string;
+  userId?: string;
+  endpoint: string;
+  model: string;
+  source: 'gemini' | 'fallback';
+  status: 'success' | 'fallback' | 'error';
+  latencyMs: number;
+  promptChars: number;
+  completionChars: number;
+  language: string;
+  errorCode?: string;
+  createdAt: string;
+}
+
+export interface ApiErrorEvent {
+  id: string;
+  userId?: string;
+  method: string;
+  path: string;
+  statusCode: number;
+  errorMessage: string;
+  createdAt: string;
+}
+
+export interface SubscriptionEvent {
+  id: string;
+  userId: string;
+  userEmail?: string;
+  userFullName?: string;
+  plan: 'free' | 'pro' | 'business';
+  previousPlan: 'free' | 'pro' | 'business';
+  amountUzs: number;
+  currency: 'UZS';
+  source: 'admin_grant' | 'checkout' | 'system';
+  actorUserId: string;
+  durationMonths: number;
+  expiresAt?: string;
+  reason?: string;
+  createdAt: string;
+}
+
+export interface AppRuntimeConfig {
+  maintenanceMode: boolean;
+  registrationEnabled: boolean;
+  aiAssistantEnabled: boolean;
+  aiFastModel: 'gemini-3.1-flash-lite' | 'gemini-4-hydrogen';
+  aiRateLimitPerMin: number;
+  freeTrialDays: number;
+  proMonthlyPriceUzs: number;
+  businessMonthlyPriceUzs: number;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  fullName: string;
+  avatarUrl?: string;
+  currency: CurrencyCode;
+  isPremium: boolean;
+  premiumPlan: 'free' | 'pro' | 'business';
+  premiumExpiresAt?: string;
+  isSuspended: boolean;
+  isSuperAdmin: boolean;
+  createdAt: string;
+  lastActiveAt?: string;
+  transactionCount: number;
+  activeSessionsCount: number;
+}
+
+export interface AdminDailyPoint {
+  date: string;
+  signups: number;
+  aiRequests: number;
+  revenueUzs: number;
+  apiErrors: number;
+}
+
+export interface AdminOverviewData {
+  metrics: {
+    totalUsers: number;
+    activeUsers24h: number;
+    activeUsers7d: number;
+    newUsersToday: number;
+    newUsers7d: number;
+    newUsers30d: number;
+    premiumUsers: number;
+    proUsers: number;
+    businessUsers: number;
+    suspendedUsers: number;
+    premiumConversionRate: number;
+    totalTransactions: number;
+    totalRevenueUzs: number;
+    revenue30dUzs: number;
+    mrrEstimateUzs: number;
+    aiRequestsTotal: number;
+    aiRequests24h: number;
+    aiFallbackRate: number;
+    aiAvgLatencyMs: number;
+    apiErrors24h: number;
+    apiErrors5xx24h: number;
+  };
+  health: {
+    serverStatus: 'online';
+    uptimeSeconds: number;
+    memoryRssMb: number;
+    heapUsedMb: number;
+    nodeVersion: string;
+    databaseStatus: 'healthy' | 'degraded';
+    databaseBackend: 'json' | 'supabase';
+    databaseLatencyMs: number;
+    databaseError?: string;
+    adminEmailConfigured: boolean;
+    geminiConfigured: boolean;
+  };
+  series: AdminDailyPoint[];
+  recentAuditLogs: AdminAuditLog[];
+}
+
+export interface AdminAiAnalyticsData {
+  summary: {
+    totalRequests: number;
+    requests24h: number;
+    geminiCount: number;
+    fallbackCount: number;
+    errorCount: number;
+    fallbackRate: number;
+    avgLatencyMs: number;
+    p95LatencyMs: number;
+  };
+  byModel: { model: string; count: number; avgLatencyMs: number }[];
+  byLanguage: { language: string; count: number }[];
+  byEndpoint: { endpoint: string; count: number; fallbackCount: number }[];
+  dailySeries: { date: string; gemini: number; fallback: number; errors: number; avgLatencyMs: number }[];
+  recentErrors: AiUsageEvent[];
+}
+
+export interface AdminRevenueData {
+  summary: {
+    totalRevenueUzs: number;
+    revenue30dUzs: number;
+    mrrEstimateUzs: number;
+    paidEventsCount: number;
+    activePaidUsers: number;
+    proActiveCount: number;
+    businessActiveCount: number;
+  };
+  byPlan: { plan: 'free' | 'pro' | 'business'; subscribers: number; revenueUzs: number }[];
+  monthlySeries: { month: string; revenueUzs: number; eventsCount: number }[];
+  recentEvents: SubscriptionEvent[];
+}
+
+export interface AdminSubscriptionsData {
+  summary: {
+    freeUsers: number;
+    proUsers: number;
+    businessUsers: number;
+    activePremiumUsers: number;
+    conversionRate: number;
+    totalEventsCount: number;
+  };
+  subscribers: AdminUserSummary[];
+  events: SubscriptionEvent[];
+  totalEvents: number;
+  page: number;
+  limit: number;
+}
+
+export interface AdminSystemHealthData {
+  serverStatus: 'online';
+  uptimeSeconds: number;
+  memoryRssMb: number;
+  heapUsedMb: number;
+  heapTotalMb: number;
+  nodeVersion: string;
+  platform: string;
+  environment: string;
+  database: {
+    status: 'healthy' | 'degraded';
+    backend: 'json' | 'supabase';
+    latencyMs: number;
+    error?: string;
+  };
+  securityChecks: {
+    adminEmailConfigured: boolean;
+    adminCodeConfigured?: boolean;
+    geminiConfigured: boolean;
+    rateLimitingActive: boolean;
+    auditLoggingActive: boolean;
+  };
+  recentApiErrors: ApiErrorEvent[];
+}
+

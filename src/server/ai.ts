@@ -423,6 +423,12 @@ export async function answerFinancialQuestionAI(
     recentTransactions: { type: string; amount: number; category: string; date: string; description: string }[];
   }
 ): Promise<string> {
+  const { detectIdentityPromptKind, detectLanguage, buildOfficialIdentityReply } = await import('./gemini.ts');
+  const identityKind = detectIdentityPromptKind(userQuery);
+  if (identityKind) {
+    return buildOfficialIdentityReply(detectLanguage(userQuery, 'uz'), identityKind);
+  }
+
   const q = userQuery.toLowerCase();
   const fmt = (n: number) => new Intl.NumberFormat('uz-UZ').format(Math.round(n)) + ' soʻm';
 

@@ -7,6 +7,16 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import type {
+  AdminAiAnalyticsData,
+  AdminAuditLog,
+  AdminOverviewData,
+  AdminRevenueData,
+  AdminSubscriptionsData,
+  AdminSystemHealthData,
+  AdminUserSummary,
+  AiUsageEvent,
+  ApiErrorEvent,
+  AppRuntimeConfig,
   UserProfile,
   Transaction,
   Category,
@@ -20,6 +30,7 @@ import type {
   FamilyMember,
   FamilyInvitation,
   Subscription,
+  SubscriptionEvent,
   RecurringTransaction,
   RecurringExecutionLog,
   ScannedReceipt,
@@ -29,6 +40,16 @@ import type {
   TelegramConnection,
   CurrencyCode,
 } from '../types/finance.ts';
+import { isVerifiedSuperAdminUser } from './admin-policy.ts';
+import {
+  DEFAULT_APP_RUNTIME_CONFIG,
+  buildAdminAiAnalyticsData,
+  buildAdminOverviewData,
+  buildAdminRevenueData,
+  buildAdminSubscriptionsData,
+  buildAdminSystemHealthData,
+  sanitizeRuntimeConfigUpdate,
+} from './admin-analytics.ts';
 import {
   DEFAULT_INCOME_CATEGORIES,
   DEFAULT_EXPENSE_CATEGORIES,
@@ -69,6 +90,13 @@ interface DatabaseSchema {
   bankConnections: Record<string, BankConnection[]>; // userId -> banks
   bankSyncLogs: Record<string, BankSyncLog[]>; // userId -> sync logs
   telegramConnections: Record<string, TelegramConnection>; // userId -> telegram
+
+  // Super Admin & Telemetry
+  adminAuditLogs: AdminAuditLog[];
+  aiUsageEvents: AiUsageEvent[];
+  apiErrorEvents: ApiErrorEvent[];
+  subscriptionEvents: SubscriptionEvent[];
+  appConfig: AppRuntimeConfig;
 }
 
 function hashPassword(password: string, salt: string): string {
@@ -97,6 +125,11 @@ class Database {
     bankConnections: {},
     bankSyncLogs: {},
     telegramConnections: {},
+    adminAuditLogs: [],
+    aiUsageEvents: [],
+    apiErrorEvents: [],
+    subscriptionEvents: [],
+    appConfig: { ...DEFAULT_APP_RUNTIME_CONFIG },
   };
 
   private readonly dbFile: string;
@@ -132,6 +165,14 @@ class Database {
           bankConnections: parsed.bankConnections || {},
           bankSyncLogs: parsed.bankSyncLogs || {},
           telegramConnections: parsed.telegramConnections || {},
+          adminAuditLogs: Array.isArray(parsed.adminAuditLogs) ? parsed.adminAuditLogs : [],
+          aiUsageEvents: Array.isArray(parsed.aiUsageEvents) ? parsed.aiUsageEvents : [],
+          apiErrorEvents: Array.isArray(parsed.apiErrorEvents) ? parsed.apiErrorEvents : [],
+          subscriptionEvents: Array.isArray(parsed.subscriptionEvents) ? parsed.subscriptionEvents : [],
+          appConfig: {
+            ...DEFAULT_APP_RUNTIME_CONFIG,
+            ...(parsed.appConfig && typeof parsed.appConfig === 'object' ? parsed.appConfig : {}),
+          },
         };
       } else if (
         !skipDemoSeed &&
@@ -159,8 +200,12 @@ class Database {
         // Preserve any existing records for export/migration, but revoke the
         // known demo bearer token. Demo credentials are also rejected at login.
         delete this.data.sessions['demo_token'];
-        this.persist();
       }
+
+      if (!skipDemoSeed && process.env.NODE_ENV !== 'production') {
+        this.ensureDefaultGamerAccount();
+      }
+      this.persist();
     } catch (e) {
       console.error('Database initialization error:', e);
       if (
@@ -171,7 +216,29 @@ class Database {
         this.seedDemoUser();
         this.data.sessions['demo_token'] = 'usr_demo_hisobot_2026';
       }
+      if (!skipDemoSeed && process.env.NODE_ENV !== 'production') {
+        this.ensureDefaultGamerAccount();
+      }
       this.persist();
+    }
+  }
+
+  private ensureDefaultGamerAccount() {
+    const targetEmail = 'xisugamer@gmail.com';
+    const existing = Object.values(this.data.users).find(
+      (u) => u.email.trim().toLowerCase() === targetEmail
+    );
+    if (!existing) {
+      const { token } = this.registerUser(targetEmail, 'Admin123', 'Xisu Gamer');
+      delete this.data.sessions[token];
+      return;
+    }
+
+    if (this.verifyUserPassword(existing.id, 'Xisu2026!')) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      existing.passwordHash = hashPassword('Admin123', salt);
+      existing.salt = salt;
+      this.logoutAllDevices(existing.id);
     }
   }
 
@@ -736,6 +803,7 @@ class Database {
     const salt = crypto.randomBytes(16).toString('hex');
     const passwordHash = hashPassword(password, salt);
 
+    const nowIso = new Date().toISOString();
     const newUser: UserRecord = {
       id: userId,
       email: cleanEmail,
@@ -752,7 +820,8 @@ class Database {
         subscriptionAlerts: true,
         telegramSync: false,
       },
-      createdAt: new Date().toISOString(),
+      lastActiveAt: nowIso,
+      createdAt: nowIso,
       passwordHash,
       salt,
     };
@@ -822,7 +891,8 @@ class Database {
   }
 
   loginUser(email: string, password: string): { user: UserProfile; token: string } {
-    const user = Object.values(this.data.users).find((u) => u.email.toLowerCase() === email.toLowerCase());
+    const cleanEmail = email.trim().toLowerCase();
+    const user = Object.values(this.data.users).find((u) => u.email.trim().toLowerCase() === cleanEmail);
     if (!user || (process.env.NODE_ENV === 'production' && user.id === 'usr_demo_hisobot_2026')) {
       throw new Error('Elektron pochta yoki parol notoʻgʻri');
     }
@@ -832,6 +902,11 @@ class Database {
       throw new Error('Elektron pochta yoki parol notoʻgʻri');
     }
 
+    if (user.isSuspended) {
+      throw new Error('Hisobingiz vaqtincha bloklangan. Administrator bilan bogʻlaning.');
+    }
+
+    user.lastActiveAt = new Date().toISOString();
     const token = crypto.randomBytes(32).toString('hex');
     this.data.sessions[token] = user.id;
     this.persist();
@@ -843,7 +918,15 @@ class Database {
     const userId = this.data.sessions[token];
     if (!userId) return null;
     const user = this.data.users[userId];
-    if (!user) return null;
+    if (!user || user.isSuspended) return null;
+
+    const nowMs = Date.now();
+    const prevMs = user.lastActiveAt ? Date.parse(user.lastActiveAt) : 0;
+    if (!Number.isFinite(prevMs) || nowMs - prevMs >= 60_000) {
+      user.lastActiveAt = new Date(nowMs).toISOString();
+      this.persist();
+    }
+
     return this.sanitizeUser(user);
   }
 
@@ -985,8 +1068,9 @@ class Database {
   }
 
   private sanitizeUser(user: UserRecord): UserProfile {
+    // Strip secrets and any persisted client-side role field so server re-evaluates it dynamically
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { passwordHash, salt, resetToken, ...rest } = user;
+    const { passwordHash, salt, resetToken, isSuperAdmin: _stripAdmin, ...rest } = user;
     return rest;
   }
 
@@ -1466,12 +1550,21 @@ class Database {
   }
 
   addWallet(userId: string, wallet: Omit<Wallet, 'id' | 'userId' | 'createdAt'>): Wallet {
+    const balance = Math.round(Number(wallet.balance ?? 0));
+    if (!Number.isFinite(balance) || balance < 0) {
+      throw new Error('Hamyon balansi manfiy boʻlishi yoki notoʻgʻri boʻlishi mumkin emas');
+    }
     const newWallet: Wallet = {
-      ...wallet,
       id: `wallet_${crypto.randomUUID()}`,
       userId,
-      balance: Math.round(Number(wallet.balance) || 0),
+      name: String(wallet.name || 'Yangi hamyon').trim(),
+      type: wallet.type || 'card',
       currency: wallet.currency || 'UZS',
+      balance,
+      color: wallet.color || '#10B981',
+      icon: wallet.icon,
+      accountNumber: wallet.accountNumber,
+      isArchived: Boolean(wallet.isArchived),
       createdAt: new Date().toISOString(),
     };
     if (!this.data.wallets[userId]) this.data.wallets[userId] = [];
@@ -1485,10 +1578,22 @@ class Database {
     const index = list.findIndex((w) => w.id === id);
     if (index === -1) throw new Error('Hamyon topilmadi');
 
+    const cur = list[index];
+    const nextBalance = updates.balance !== undefined ? Math.round(Number(updates.balance)) : cur.balance;
+    if (!Number.isFinite(nextBalance) || nextBalance < 0) {
+      throw new Error('Hamyon balansi manfiy boʻlishi yoki notoʻgʻri boʻlishi mumkin emas');
+    }
+
     list[index] = {
-      ...list[index],
-      ...updates,
-      balance: updates.balance !== undefined ? Math.round(Number(updates.balance)) : list[index].balance,
+      ...cur,
+      ...(typeof updates.name === 'string' && updates.name.trim() ? { name: updates.name.trim() } : {}),
+      ...(updates.type !== undefined ? { type: updates.type } : {}),
+      ...(updates.currency !== undefined ? { currency: updates.currency } : {}),
+      ...(updates.color !== undefined ? { color: updates.color } : {}),
+      ...(updates.icon !== undefined ? { icon: updates.icon } : {}),
+      ...(updates.accountNumber !== undefined ? { accountNumber: updates.accountNumber } : {}),
+      ...(updates.isArchived !== undefined ? { isArchived: Boolean(updates.isArchived) } : {}),
+      balance: nextBalance,
     };
     this.persist();
     return list[index];
@@ -1528,7 +1633,17 @@ class Database {
       throw new Error('Oʻtkazma summasi noldan katta boʻlishi kerak');
     }
 
-    const destAmount = targetAmount !== undefined && targetAmount !== null ? Math.round(Number(targetAmount)) : numAmount;
+    let destAmount: number;
+    if (targetAmount !== undefined && targetAmount !== null) {
+      destAmount = Math.round(Number(targetAmount));
+    } else if (fromWallet.currency !== toWallet.currency) {
+      const fromRate = DEFAULT_EXCHANGE_RATES[fromWallet.currency] || 1;
+      const toRate = DEFAULT_EXCHANGE_RATES[toWallet.currency] || 1;
+      destAmount = Math.max(1, Math.round((numAmount * fromRate) / toRate));
+    } else {
+      destAmount = numAmount;
+    }
+
     if (!Number.isFinite(destAmount) || destAmount <= 0) {
       throw new Error('Qabul qiluvchi summa noldan katta boʻlishi kerak');
     }
@@ -1743,12 +1858,21 @@ class Database {
   }
 
   addSubscription(userId: string, sub: Omit<Subscription, 'id' | 'userId' | 'createdAt'>): Subscription {
+    const amount = Math.round(Number(sub.amount));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Obuna summasi noldan katta boʻlishi kerak');
+    }
     const newSub: Subscription = {
-      ...sub,
       id: `sub_${crypto.randomUUID()}`,
       userId,
-      amount: Math.round(Number(sub.amount)),
+      serviceName: String(sub.serviceName || '').trim(),
+      amount,
       currency: sub.currency || 'UZS',
+      billingInterval: sub.billingInterval || 'monthly',
+      nextPaymentDate: sub.nextPaymentDate,
+      categoryName: sub.categoryName || 'Obunalar va xizmatlar',
+      status: sub.status || 'active',
+      notes: sub.notes,
       createdAt: new Date().toISOString(),
     };
     if (!this.data.subscriptions[userId]) this.data.subscriptions[userId] = [];
@@ -1762,10 +1886,24 @@ class Database {
     const index = list.findIndex((s) => s.id === id);
     if (index === -1) throw new Error('Obuna topilmadi');
 
+    const cur = list[index];
+    const nextAmount = updates.amount !== undefined ? Math.round(Number(updates.amount)) : cur.amount;
+    if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+      throw new Error('Obuna summasi noldan katta boʻlishi kerak');
+    }
+
     list[index] = {
-      ...list[index],
-      ...updates,
-      amount: updates.amount !== undefined ? Math.round(Number(updates.amount)) : list[index].amount,
+      ...cur,
+      ...(typeof updates.serviceName === 'string' && updates.serviceName.trim()
+        ? { serviceName: updates.serviceName.trim() }
+        : {}),
+      ...(updates.currency !== undefined ? { currency: updates.currency } : {}),
+      ...(updates.billingInterval !== undefined ? { billingInterval: updates.billingInterval } : {}),
+      ...(updates.nextPaymentDate !== undefined ? { nextPaymentDate: updates.nextPaymentDate } : {}),
+      ...(updates.categoryName !== undefined ? { categoryName: updates.categoryName } : {}),
+      ...(updates.status !== undefined ? { status: updates.status } : {}),
+      ...(updates.notes !== undefined ? { notes: updates.notes } : {}),
+      amount: nextAmount,
     };
     this.persist();
     return list[index];
@@ -1788,12 +1926,25 @@ class Database {
   }
 
   addRecurringTransaction(userId: string, rec: Omit<RecurringTransaction, 'id' | 'userId' | 'createdAt'>): RecurringTransaction {
+    const amount = Math.round(Number(rec.amount));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Doimiy toʻlov summasi noldan katta boʻlishi kerak');
+    }
     const newRec: RecurringTransaction = {
-      ...rec,
       id: `rec_${crypto.randomUUID()}`,
       userId,
-      amount: Math.round(Number(rec.amount)),
+      description: String(rec.description || '').trim(),
+      amount,
+      type: rec.type,
       currency: rec.currency || 'UZS',
+      frequency: rec.frequency,
+      categoryId: rec.categoryId,
+      categoryName: rec.categoryName,
+      walletId: rec.walletId,
+      paymentMethod: rec.paymentMethod,
+      nextExecutionDate: rec.nextExecutionDate,
+      status: rec.status || 'active',
+      notes: rec.notes,
       idempotencyKeyPrefix: rec.idempotencyKeyPrefix || `rec_${Date.now()}`,
       createdAt: new Date().toISOString(),
     };
@@ -1808,10 +1959,28 @@ class Database {
     const index = list.findIndex((r) => r.id === id);
     if (index === -1) throw new Error('Doimiy toʻlov topilmadi');
 
+    const cur = list[index];
+    const nextAmount = updates.amount !== undefined ? Math.round(Number(updates.amount)) : cur.amount;
+    if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+      throw new Error('Doimiy toʻlov summasi noldan katta boʻlishi kerak');
+    }
+
     list[index] = {
-      ...list[index],
-      ...updates,
-      amount: updates.amount !== undefined ? Math.round(Number(updates.amount)) : list[index].amount,
+      ...cur,
+      ...(typeof updates.description === 'string' && updates.description.trim()
+        ? { description: updates.description.trim() }
+        : {}),
+      ...(updates.type !== undefined ? { type: updates.type } : {}),
+      ...(updates.currency !== undefined ? { currency: updates.currency } : {}),
+      ...(updates.frequency !== undefined ? { frequency: updates.frequency } : {}),
+      ...(updates.categoryId !== undefined ? { categoryId: updates.categoryId } : {}),
+      ...(updates.categoryName !== undefined ? { categoryName: updates.categoryName } : {}),
+      ...(updates.walletId !== undefined ? { walletId: updates.walletId } : {}),
+      ...(updates.paymentMethod !== undefined ? { paymentMethod: updates.paymentMethod } : {}),
+      ...(updates.nextExecutionDate !== undefined ? { nextExecutionDate: updates.nextExecutionDate } : {}),
+      ...(updates.status !== undefined ? { status: updates.status } : {}),
+      ...(updates.notes !== undefined ? { notes: updates.notes } : {}),
+      amount: nextAmount,
     };
     this.persist();
     return list[index];
@@ -1987,7 +2156,7 @@ class Database {
       if (!isDup) {
         this.addTransaction(userId, {
           ...t,
-          categoryId: 'exp_food',
+          categoryId: t.categoryName.includes('Transport') ? 'exp_transport' : 'exp_food',
           time: getCurrentTimeString(),
           notes: `${bank.bankName} sinxronizatsiyasi orqali import qilindi`,
         });
@@ -2087,6 +2256,371 @@ class Database {
       result: Math.round(result * 100) / 100,
       rate: Math.round(directRate * 10000) / 10000,
     };
+  }
+
+  // ==========================================
+  // --- 9. SUPER ADMIN, TELEMETRY & CONFIG ---
+  // ==========================================
+  recordAiUsageEvent(event: Omit<AiUsageEvent, 'id' | 'createdAt'>): AiUsageEvent {
+    const entry: AiUsageEvent = {
+      ...event,
+      id: `ai_ev_${crypto.randomUUID()}`,
+      createdAt: new Date().toISOString(),
+    };
+    this.data.aiUsageEvents.unshift(entry);
+    if (this.data.aiUsageEvents.length > 5000) {
+      this.data.aiUsageEvents.length = 5000;
+    }
+    this.persist();
+    return entry;
+  }
+
+  recordApiErrorEvent(event: Omit<ApiErrorEvent, 'id' | 'createdAt'>): ApiErrorEvent {
+    const entry: ApiErrorEvent = {
+      ...event,
+      id: `err_ev_${crypto.randomUUID()}`,
+      createdAt: new Date().toISOString(),
+    };
+    this.data.apiErrorEvents.unshift(entry);
+    if (this.data.apiErrorEvents.length > 2000) {
+      this.data.apiErrorEvents.length = 2000;
+    }
+    this.persist();
+    return entry;
+  }
+
+  getAppConfig(): AppRuntimeConfig {
+    return {
+      ...DEFAULT_APP_RUNTIME_CONFIG,
+      ...(this.data.appConfig || {}),
+    };
+  }
+
+  updateAppConfig(updates: Partial<AppRuntimeConfig>, updatedBy: string): AppRuntimeConfig {
+    const next = sanitizeRuntimeConfigUpdate(this.getAppConfig(), updates, updatedBy);
+    this.data.appConfig = next;
+    this.persist();
+    return next;
+  }
+
+  addAdminAuditLog(entry: Omit<AdminAuditLog, 'id' | 'createdAt'>): AdminAuditLog {
+    const log: AdminAuditLog = {
+      ...entry,
+      id: `aud_${crypto.randomUUID()}`,
+      createdAt: new Date().toISOString(),
+    };
+    this.data.adminAuditLogs.unshift(log);
+    if (this.data.adminAuditLogs.length > 5000) {
+      this.data.adminAuditLogs.length = 5000;
+    }
+    this.persist();
+    return log;
+  }
+
+  listAdminAuditLogs(params: {
+    action?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): { logs: AdminAuditLog[]; total: number; page: number; limit: number } {
+    const safeLimit = Math.min(50, Math.max(1, Math.round(Number(params.limit) || 20)));
+    const safePage = Math.max(1, Math.round(Number(params.page) || 1));
+    let filtered = [...this.data.adminAuditLogs];
+
+    if (params.action && params.action !== 'all') {
+      filtered = filtered.filter((l) => l.action === params.action);
+    }
+    if (params.search && params.search.trim()) {
+      const q = params.search.trim().toLowerCase();
+      filtered = filtered.filter(
+        (l) =>
+          l.adminEmail.toLowerCase().includes(q) ||
+          l.action.toLowerCase().includes(q) ||
+          l.targetId.toLowerCase().includes(q) ||
+          l.reason.toLowerCase().includes(q)
+      );
+    }
+
+    const start = (safePage - 1) * safeLimit;
+    return {
+      logs: filtered.slice(start, start + safeLimit),
+      total: filtered.length,
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
+  private buildAllUserSummaries(): AdminUserSummary[] {
+    const sessionCounts = new Map<string, number>();
+    for (const uid of Object.values(this.data.sessions)) {
+      sessionCounts.set(uid, (sessionCounts.get(uid) || 0) + 1);
+    }
+
+    return Object.values(this.data.users).map((u) => {
+      const sanitized = this.sanitizeUser(u);
+      const isPrem = Boolean(sanitized.isPremium);
+      const plan: 'free' | 'pro' | 'business' =
+        isPrem && (sanitized.premiumPlan === 'pro' || sanitized.premiumPlan === 'business')
+          ? sanitized.premiumPlan
+          : 'free';
+
+      return {
+        id: sanitized.id,
+        email: sanitized.email,
+        fullName: sanitized.fullName,
+        avatarUrl: sanitized.avatarUrl,
+        currency: sanitized.currency,
+        isPremium: isPrem,
+        premiumPlan: plan,
+        premiumExpiresAt: sanitized.premiumExpiresAt,
+        isSuspended: Boolean(sanitized.isSuspended),
+        isSuperAdmin: isVerifiedSuperAdminUser(sanitized),
+        createdAt: sanitized.createdAt,
+        lastActiveAt: sanitized.lastActiveAt || sanitized.createdAt,
+        transactionCount: (this.data.transactions[sanitized.id] || []).length,
+        activeSessionsCount: sessionCounts.get(sanitized.id) || 0,
+      };
+    });
+  }
+
+  listAdminUsers(params: {
+    search?: string;
+    plan?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): { users: AdminUserSummary[]; total: number; page: number; limit: number } {
+    const safeLimit = Math.min(50, Math.max(1, Math.round(Number(params.limit) || 20)));
+    const safePage = Math.max(1, Math.round(Number(params.page) || 1));
+
+    let list = this.buildAllUserSummaries().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    if (params.search && params.search.trim()) {
+      const q = params.search.trim().toLowerCase();
+      list = list.filter(
+        (u) =>
+          u.fullName.toLowerCase().includes(q) ||
+          u.email.toLowerCase().includes(q) ||
+          u.id.toLowerCase().includes(q)
+      );
+    }
+    if (params.plan && params.plan !== 'all') {
+      list = list.filter((u) => u.premiumPlan === params.plan);
+    }
+    if (params.status === 'active') {
+      list = list.filter((u) => !u.isSuspended);
+    } else if (params.status === 'suspended') {
+      list = list.filter((u) => u.isSuspended);
+    } else if (params.status === 'admin') {
+      list = list.filter((u) => u.isSuperAdmin);
+    }
+
+    const start = (safePage - 1) * safeLimit;
+    return {
+      users: list.slice(start, start + safeLimit),
+      total: list.length,
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
+  adminUpdateUserSubscription(params: {
+    adminUser: UserProfile;
+    targetUserId: string;
+    plan: 'free' | 'pro' | 'business';
+    durationMonths: number;
+    reason: string;
+    ipAddress?: string;
+  }): { user: AdminUserSummary; subscriptionEvent: SubscriptionEvent; auditLog: AdminAuditLog } {
+    const target = this.data.users[params.targetUserId];
+    if (!target) {
+      throw new Error('Foydalanuvchi topilmadi');
+    }
+
+    const previousPlan: 'free' | 'pro' | 'business' =
+      target.isPremium && (target.premiumPlan === 'pro' || target.premiumPlan === 'business')
+        ? target.premiumPlan
+        : 'free';
+
+    const cfg = this.getAppConfig();
+    const safeMonths = params.plan === 'free' ? 0 : Math.min(36, Math.max(1, Math.round(params.durationMonths || 1)));
+    let expiresAt: string | undefined;
+
+    if (params.plan === 'free') {
+      target.isPremium = false;
+      target.premiumPlan = 'free';
+      delete target.premiumExpiresAt;
+    } else {
+      const d = new Date();
+      d.setMonth(d.getMonth() + safeMonths);
+      expiresAt = d.toISOString().split('T')[0];
+      target.isPremium = true;
+      target.premiumPlan = params.plan;
+      target.premiumExpiresAt = expiresAt;
+    }
+
+    const unitPrice =
+      params.plan === 'business' ? cfg.businessMonthlyPriceUzs : params.plan === 'pro' ? cfg.proMonthlyPriceUzs : 0;
+    const amountUzs = unitPrice * safeMonths;
+
+    const subscriptionEvent: SubscriptionEvent = {
+      id: `sub_ev_${crypto.randomUUID()}`,
+      userId: target.id,
+      userEmail: target.email,
+      userFullName: target.fullName,
+      plan: params.plan,
+      previousPlan,
+      amountUzs,
+      currency: 'UZS',
+      source: 'admin_grant',
+      actorUserId: params.adminUser.id,
+      durationMonths: safeMonths,
+      expiresAt,
+      reason: params.reason,
+      createdAt: new Date().toISOString(),
+    };
+    this.data.subscriptionEvents.unshift(subscriptionEvent);
+
+    const auditLog = this.addAdminAuditLog({
+      adminUserId: params.adminUser.id,
+      adminEmail: params.adminUser.email,
+      action: 'subscription.update',
+      targetType: 'user',
+      targetId: target.id,
+      reason: params.reason,
+      metadata: {
+        targetEmail: target.email,
+        previousPlan,
+        nextPlan: params.plan,
+        durationMonths: safeMonths,
+        amountUzs,
+      },
+      ipAddress: params.ipAddress,
+    });
+
+    this.persist();
+    const updatedSummary = this.buildAllUserSummaries().find((u) => u.id === target.id)!;
+    return { user: updatedSummary, subscriptionEvent, auditLog };
+  }
+
+  adminSetUserSuspended(params: {
+    adminUser: UserProfile;
+    targetUserId: string;
+    suspended: boolean;
+    reason: string;
+    ipAddress?: string;
+  }): { user: AdminUserSummary; clearedSessions: number; auditLog: AdminAuditLog } {
+    const target = this.data.users[params.targetUserId];
+    if (!target) {
+      throw new Error('Foydalanuvchi topilmadi');
+    }
+    if (target.id === params.adminUser.id || isVerifiedSuperAdminUser(target)) {
+      throw new Error('Super Admin hisobini bloklab boʻlmaydi');
+    }
+
+    target.isSuspended = params.suspended;
+    let clearedSessions = 0;
+    if (params.suspended) {
+      clearedSessions = this.logoutAllDevices(target.id);
+    }
+
+    const auditLog = this.addAdminAuditLog({
+      adminUserId: params.adminUser.id,
+      adminEmail: params.adminUser.email,
+      action: params.suspended ? 'user.suspend' : 'user.reactivate',
+      targetType: 'user',
+      targetId: target.id,
+      reason: params.reason,
+      metadata: {
+        targetEmail: target.email,
+        suspended: params.suspended,
+        clearedSessions,
+      },
+      ipAddress: params.ipAddress,
+    });
+
+    this.persist();
+    const updatedSummary = this.buildAllUserSummaries().find((u) => u.id === target.id)!;
+    return { user: updatedSummary, clearedSessions, auditLog };
+  }
+
+  adminRevokeUserSessions(params: {
+    adminUser: UserProfile;
+    targetUserId: string;
+    reason: string;
+    ipAddress?: string;
+  }): { clearedSessions: number; auditLog: AdminAuditLog } {
+    const target = this.data.users[params.targetUserId];
+    if (!target) {
+      throw new Error('Foydalanuvchi topilmadi');
+    }
+    const clearedSessions = this.logoutAllDevices(target.id);
+    const auditLog = this.addAdminAuditLog({
+      adminUserId: params.adminUser.id,
+      adminEmail: params.adminUser.email,
+      action: 'user.revoke_sessions',
+      targetType: 'user',
+      targetId: target.id,
+      reason: params.reason,
+      metadata: {
+        targetEmail: target.email,
+        clearedSessions,
+      },
+      ipAddress: params.ipAddress,
+    });
+    return { clearedSessions, auditLog };
+  }
+
+  getAdminOverviewData(health: {
+    ok: boolean;
+    backend: 'json' | 'supabase';
+    latencyMs: number;
+    error?: string;
+  }): AdminOverviewData {
+    const totalTransactions = Object.values(this.data.transactions).reduce((s, list) => s + list.length, 0);
+    return buildAdminOverviewData({
+      users: this.buildAllUserSummaries(),
+      totalTransactions,
+      aiEvents: this.data.aiUsageEvents,
+      apiErrors: this.data.apiErrorEvents,
+      subscriptionEvents: this.data.subscriptionEvents,
+      auditLogs: this.data.adminAuditLogs,
+      config: this.getAppConfig(),
+      health,
+    });
+  }
+
+  getAdminSubscriptionsData(params: { page?: number; limit?: number }): AdminSubscriptionsData {
+    return buildAdminSubscriptionsData({
+      users: this.buildAllUserSummaries(),
+      subscriptionEvents: this.data.subscriptionEvents,
+      page: Number(params.page) || 1,
+      limit: Number(params.limit) || 20,
+    });
+  }
+
+  getAdminRevenueData(): AdminRevenueData {
+    return buildAdminRevenueData({
+      users: this.buildAllUserSummaries(),
+      subscriptionEvents: this.data.subscriptionEvents,
+      config: this.getAppConfig(),
+    });
+  }
+
+  getAdminAiAnalyticsData(): AdminAiAnalyticsData {
+    return buildAdminAiAnalyticsData(this.data.aiUsageEvents);
+  }
+
+  getAdminSystemHealthData(health: {
+    ok: boolean;
+    backend: 'json' | 'supabase';
+    latencyMs: number;
+    error?: string;
+  }): AdminSystemHealthData {
+    return buildAdminSystemHealthData({
+      apiErrors: this.data.apiErrorEvents,
+      health,
+    });
   }
 }
 
