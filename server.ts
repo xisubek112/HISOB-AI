@@ -894,8 +894,13 @@ export function createApp() {
 
       const langHint = typeof language === 'string' ? language : 'uz';
       const abortController = new AbortController();
-      req.on('close', () => {
+      req.on('aborted', () => {
         abortController.abort();
+      });
+      res.on('close', () => {
+        if (!res.writableEnded) {
+          abortController.abort();
+        }
       });
 
       res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
