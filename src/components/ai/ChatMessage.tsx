@@ -103,7 +103,15 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
               line.trim() === '' ? (
                 <div key={i} className="h-1" />
               ) : (
-                <p key={i}>{renderFormattedLine(line)}</p>
+                <p key={i}>
+                  {renderFormattedLine(line)}
+                  {message.isStreaming && i === lines.length - 1 && (
+                    <span
+                      aria-hidden="true"
+                      className="inline-block w-1.5 h-3.5 ml-1 align-middle rounded-xs bg-emerald-500 dark:bg-emerald-400 animate-pulse"
+                    />
+                  )}
+                </p>
               )
             )}
           </div>
@@ -422,8 +430,8 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
             isUser ? 'justify-end' : 'justify-start'
           }`}
         >
-          <span>{message.timestamp}</span>
-          {!isUser && ttsSupported && !message.isError && (
+          <span>{message.isStreaming ? 'Yozmoqda...' : message.timestamp}</span>
+          {!isUser && ttsSupported && !message.isError && !message.isStreaming && (
             <button
               type="button"
               onClick={() =>

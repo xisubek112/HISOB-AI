@@ -22,10 +22,12 @@ import {
 import {
   GEMINI_MODEL,
   checkUserRateLimit,
+  invalidateUserAiContext,
   isGeminiConfigured,
   parseReceiptWithGemini,
   parseTransactionWithGemini,
   runGeminiAssistantTurn,
+  streamGeminiAssistantTurn,
   type GeminiHistoryItem,
 } from './src/server/gemini.ts';
 import type { UserProfile, FinancialSummary, AIProposedAction } from './src/types/finance.ts';
@@ -88,9 +90,11 @@ export function createApp() {
   app.set('trust proxy', 1);
 
   // Security headers
-  app.use((_req: Request, res: Response, next: NextFunction) => {
+  app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
+    if (req.path.startsWith('/api')) {
+      res.setHeader('X-Frame-Options', 'DENY');
+    }
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-DNS-Prefetch-Control', 'off');
     next();
@@ -125,6 +129,18 @@ export function createApp() {
       const user = await getRepository().getUserByToken(token);
       if (user) {
         req.user = user;
+        if (
+          req.method !== 'GET' &&
+          !req.path.startsWith('/api/ai/assistant') &&
+          !req.path.startsWith('/api/ai/chat') &&
+          !req.path.startsWith('/api/ai/parse-transaction')
+        ) {
+          res.on('finish', () => {
+            if (res.statusCode < 400) {
+              invalidateUserAiContext(user.id);
+            }
+          });
+        }
         return next();
       }
     }
@@ -838,6 +854,84 @@ export function createApp() {
       } catch (err: any) {
         console.error('[HISOBOT AI] /api/ai/assistant unexpected failure:', err?.message || 'unknown');
         res.status(500).json({ error: 'AI yordamchisi javob bera olmadi. Iltimos, birozdan keyin urinib koʻring.' });
+      }
+    })
+  );
+
+  app.post(
+    '/api/ai/assistant/stream',
+    authMiddleware,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const userId = req.user!.id;
+      const rate = checkUserRateLimit(userId);
+      if (!rate.allowed) {
+        return res.status(429).json({
+          error: `Juda koʻp soʻrov yuborildi. Iltimos, ${rate.retryAfterSec || 10} soniyadan keyin qayta urinib koʻring.`,
+        });
+      }
+
+      const { message, history, language } = req.body as {
+        message?: unknown;
+        history?: unknown;
+        language?: unknown;
+      };
+
+      if (typeof message !== 'string' || !message.trim()) {
+        return res.status(400).json({ error: 'Xabar matni kiritilmagan' });
+      }
+
+      const safeHistory: GeminiHistoryItem[] = Array.isArray(history)
+        ? history
+            .filter(
+              (h): h is GeminiHistoryItem =>
+                Boolean(h) &&
+                typeof h === 'object' &&
+                (h.role === 'user' || h.role === 'assistant') &&
+                typeof h.content === 'string'
+            )
+            .slice(-8)
+        : [];
+
+      const langHint = typeof language === 'string' ? language : 'uz';
+      const abortController = new AbortController();
+      req.on('close', () => {
+        abortController.abort();
+      });
+
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders?.();
+
+      const sendEvent = (event: string, data: unknown) => {
+        if (res.writableEnded || abortController.signal.aborted) return;
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+
+      try {
+        const result = await streamGeminiAssistantTurn(
+          {
+            user: req.user!,
+            message: message.trim(),
+            history: safeHistory,
+            language: langHint,
+            signal: abortController.signal,
+          },
+          {
+            onDelta: (text) => sendEvent('delta', { text }),
+            onRows: (structuredRows) => sendEvent('rows', { structuredRows }),
+          }
+        );
+
+        sendEvent('done', result);
+        if (!res.writableEnded) res.end();
+      } catch (err: any) {
+        console.error('[HISOBOT AI] /api/ai/assistant/stream unexpected failure:', err?.message || 'unknown');
+        sendEvent('error', {
+          error: 'AI yordamchisi javob bera olmadi. Iltimos, birozdan keyin urinib koʻring.',
+        });
+        if (!res.writableEnded) res.end();
       }
     })
   );

@@ -7,6 +7,7 @@ import {
   GoogleGenAI,
   Type,
   ThinkingLevel,
+  type FunctionCall,
   type FunctionDeclaration,
   type Content,
   type Part,
@@ -23,17 +24,22 @@ import type {
   AIProposedAction,
   Category,
   ScannedReceipt,
+  Transaction,
   UserProfile,
 } from '../types/finance.ts';
 import { getTodayDateString } from '../utils/formatters.ts';
 
-export const GEMINI_MODEL = 'gemini-3.8-flash';
+export const GEMINI_MODEL = 'gemini-4-hydrogen';
+export const GEMINI_FAST_MODEL = 'gemini-3.1-flash-lite';
 
-const REQUEST_TIMEOUT_MS = 30_000;
+const REQUEST_TIMEOUT_MS = 25_000;
+const CONTEXT_CACHE_TTL_MS = 15_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 20;
 
 const userRequestTimestamps = new Map<string, number[]>();
+
+let cachedGeminiClient: { apiKey: string; client: GoogleGenAI } | null = null;
 
 export interface GeminiHistoryItem {
   role: 'user' | 'assistant';
@@ -62,7 +68,10 @@ export function isGeminiConfigured(): boolean {
 function getGeminiClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return null;
-  return new GoogleGenAI({
+  if (cachedGeminiClient && cachedGeminiClient.apiKey === apiKey) {
+    return cachedGeminiClient.client;
+  }
+  const client = new GoogleGenAI({
     apiKey,
     httpOptions: {
       headers: {
@@ -70,6 +79,8 @@ function getGeminiClient(): GoogleGenAI | null {
       },
     },
   });
+  cachedGeminiClient = { apiKey, client };
+  return client;
 }
 
 export function checkUserRateLimit(userId: string): { allowed: boolean; retryAfterSec?: number } {
@@ -187,7 +198,7 @@ function sanitizeErrorForLog(err: unknown): string {
     .slice(0, 220);
 }
 
-async function buildUserFinancialContext(userId: string) {
+async function loadUserFinancialContextFresh(userId: string) {
   const repo = getRepository();
   const [allTx, categories, wallets, goals, debts, subscriptions, rawBudgets] = await Promise.all([
     repo.getTransactions(userId),
@@ -201,7 +212,12 @@ async function buildUserFinancialContext(userId: string) {
 
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
+  const formatYMD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const todayStr = getTodayDateString();
+  const weekStartDate = new Date(now);
+  weekStartDate.setDate(weekStartDate.getDate() - 6);
+  const weekStartStr = formatYMD(weekStartDate);
+  const thisYearPrefix = `${now.getFullYear()}-`;
   const thisMonthPrefix = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastMonthPrefix = `${lastMonthDate.getFullYear()}-${pad(lastMonthDate.getMonth() + 1)}`;
@@ -214,6 +230,10 @@ async function buildUserFinancialContext(userId: string) {
   const todayIncome = todayTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const todayExpense = todayTx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
 
+  const thisWeekTx = allTx.filter((t) => t.date >= weekStartStr && t.date <= todayStr);
+  const thisWeekIncome = thisWeekTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const thisWeekExpense = thisWeekTx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+
   const thisMonthTx = allTx.filter((t) => t.date.startsWith(thisMonthPrefix));
   const thisMonthIncome = thisMonthTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const thisMonthExpense = thisMonthTx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
@@ -221,6 +241,10 @@ async function buildUserFinancialContext(userId: string) {
   const lastMonthTx = allTx.filter((t) => t.date.startsWith(lastMonthPrefix));
   const lastMonthIncome = lastMonthTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const lastMonthExpense = lastMonthTx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+
+  const thisYearTx = allTx.filter((t) => t.date.startsWith(thisYearPrefix));
+  const thisYearIncome = thisYearTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const thisYearExpense = thisYearTx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
 
   const catExpMap: Record<string, number> = {};
   thisMonthTx
@@ -308,10 +332,14 @@ async function buildUserFinancialContext(userId: string) {
     totalBalance,
     todayIncome,
     todayExpense,
+    thisWeekIncome,
+    thisWeekExpense,
     thisMonthIncome,
     thisMonthExpense,
     lastMonthIncome,
     lastMonthExpense,
+    thisYearIncome,
+    thisYearExpense,
     netSavings: thisMonthIncome - thisMonthExpense,
     topExpenseCategories,
     budgets,
@@ -321,7 +349,7 @@ async function buildUserFinancialContext(userId: string) {
     subscriptions: subscriptions
       .filter((s) => s.status === 'active')
       .map((s) => ({ serviceName: s.serviceName, amount: s.amount, billingInterval: s.billingInterval, nextPaymentDate: s.nextPaymentDate })),
-    recentTransactions: allTx.slice(0, 12).map((t) => ({
+    recentTransactions: allTx.slice(0, 8).map((t) => ({
       type: t.type,
       amount: t.amount,
       category: t.categoryName,
@@ -329,10 +357,47 @@ async function buildUserFinancialContext(userId: string) {
       description: t.description,
       paymentMethod: t.paymentMethod,
     })),
+    allTransactions: allTx,
     categories,
     healthScore,
     forecast,
   };
+}
+
+type UserFinancialContext = Awaited<ReturnType<typeof loadUserFinancialContextFresh>>;
+
+const userContextCache = new Map<string, { expiresAt: number; data: UserFinancialContext }>();
+const inFlightContextLoads = new Map<string, Promise<UserFinancialContext>>();
+
+export function invalidateUserAiContext(userId: string) {
+  userContextCache.delete(userId);
+}
+
+async function buildUserFinancialContext(userId: string): Promise<UserFinancialContext> {
+  const cached = userContextCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
+  const pending = inFlightContextLoads.get(userId);
+  if (pending) {
+    return pending;
+  }
+
+  const loadPromise = loadUserFinancialContextFresh(userId)
+    .then((data) => {
+      userContextCache.set(userId, {
+        expiresAt: Date.now() + CONTEXT_CACHE_TTL_MS,
+        data,
+      });
+      return data;
+    })
+    .finally(() => {
+      inFlightContextLoads.delete(userId);
+    });
+
+  inFlightContextLoads.set(userId, loadPromise);
+  return loadPromise;
 }
 
 function matchCategory(categories: Category[], rawName: string, type: 'income' | 'expense'): Category | undefined {
@@ -374,16 +439,13 @@ function matchCategory(categories: Category[], rawName: string, type: 'income' |
   return sameType[sameType.length - 1];
 }
 
-async function buildReportForPeriod(
-  userId: string,
+function buildReportForPeriod(
+  ctx: UserFinancialContext,
   period: 'today' | 'week' | 'month' | 'year',
   focus: string | undefined,
   lang: 'uz' | 'ru' | 'en'
 ) {
-  const [ctx, allTx] = await Promise.all([
-    buildUserFinancialContext(userId),
-    getRepository().getTransactions(userId),
-  ]);
+  const allTx: Transaction[] = ctx.allTransactions;
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   const formatYMD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -612,7 +674,7 @@ const assistantToolDeclarations: FunctionDeclaration[] = [
   },
 ];
 
-function buildSystemInstruction(user: UserProfile, ctx: Awaited<ReturnType<typeof buildUserFinancialContext>>): string {
+function buildSystemInstruction(user: UserProfile, ctx: UserFinancialContext): string {
   const compactStats = {
     userName: user.fullName,
     currency: user.currency,
@@ -620,11 +682,15 @@ function buildSystemInstruction(user: UserProfile, ctx: Awaited<ReturnType<typeo
     totalBalance: ctx.totalBalance,
     todayIncome: ctx.todayIncome,
     todayExpense: ctx.todayExpense,
+    thisWeekIncome: ctx.thisWeekIncome,
+    thisWeekExpense: ctx.thisWeekExpense,
     thisMonthIncome: ctx.thisMonthIncome,
     thisMonthExpense: ctx.thisMonthExpense,
     netSavingsThisMonth: ctx.netSavings,
     lastMonthIncome: ctx.lastMonthIncome,
     lastMonthExpense: ctx.lastMonthExpense,
+    thisYearIncome: ctx.thisYearIncome,
+    thisYearExpense: ctx.thisYearExpense,
     topExpenseCategories: ctx.topExpenseCategories.slice(0, 5),
     budgets: ctx.budgets,
     goals: ctx.goals,
@@ -647,30 +713,24 @@ function buildSystemInstruction(user: UserProfile, ctx: Awaited<ReturnType<typeo
       income: ctx.categories.filter((c) => c.type === 'income').map((c) => c.name),
       expense: ctx.categories.filter((c) => c.type === 'expense').map((c) => c.name),
     },
-    recentTransactions: ctx.recentTransactions.slice(0, 8),
+    recentTransactions: ctx.recentTransactions.slice(0, 6),
   };
 
-  return `You are HISOBOT AI Assistant — an intelligent, warm, trustworthy, and sharp personal finance advisor inside the HISOBOT AI app.
+  return `You are HISOBOT AI Assistant — an intelligent, warm, trustworthy, and fast personal finance advisor inside the HISOBOT AI app.
 
 PERSONALITY & TONE:
-- Smart, sincere, respectful, natural, and concise (typically 2-6 sentences unless user requests deep breakdown).
-- Understands light, friendly humor in casual conversation, while staying accurate, serious, and clear on money and numbers.
-- Explain complex financial ideas simply without confusing jargon.
-- Format key numbers neatly with **bold** (e.g. **150 000 soʻm**) when presenting text. Avoid long robotic walls of text.
+- Smart, sincere, respectful, natural, and crisp (keep quick answers to 1-4 concise sentences; expand only when user asks for deep breakdown).
+- Format key numbers neatly with **bold** (e.g. **150 000 soʻm**). Avoid long robotic walls of text.
 
 LANGUAGE RULE:
-- Always reply in the EXACT language the user is writing/speaking in:
-  - Uzbek (Latin by default, e.g., soʻm; or Cyrillic if user explicitly writes in Cyrillic)
-  - Russian (if user writes in Russian)
-  - English (if user writes in English)
-- Never switch languages unnecessarily.
+- Reply in the EXACT language the user writes/speaks in: Uzbek (Latin default, e.g. soʻm; or Cyrillic if Cyrillic), Russian, or English.
 
-DATA & SECURITY RULES:
-- Use ONLY the authenticated user's verified financial snapshot provided below (or returned by get_financial_report). NEVER invent numbers, fake transactions, or mention any other user's data.
-- If the user logs an income or expense in natural speech/text (e.g. "Bugun taksiga 35 ming sarfladim", "Сегодня потратил 50 тысяч на обед", "I spent 120000 on groceries"), call \`propose_transaction\` instead of pretending it was already saved!
+DATA & TOOL RULES:
+- Use ONLY the authenticated user's verified snapshot below. NEVER invent numbers or transactions.
+- Answer general questions, balances, daily/weekly/monthly/yearly totals, advice, and forecasts DIRECTLY in a single fast turn using the snapshot below (only call \`get_financial_report\` when a dedicated structured period report table is clearly needed).
+- If the user logs an income or expense (e.g. "Bugun taksiga 35 ming sarfladim"), call \`propose_transaction\`.
 - If the user wants to set a category spending limit/budget, call \`propose_budget\`.
 - If the user wants to create a savings goal, call \`propose_goal\`.
-- If the user asks for today's, weekly, monthly, or yearly financial report / breakdown / comparison / forecast, call \`get_financial_report\` when helpful or cite exact figures from the snapshot below.
 - Never claim a transaction, budget, or goal has been saved until the user confirms the proposal card.
 
 AUTHENTICATED USER FINANCIAL SNAPSHOT:
@@ -975,6 +1035,55 @@ async function runFallbackAssistantTurn(params: {
   };
 }
 
+function buildFriendlyGeminiWarning(err: unknown, detectedLang: 'uz' | 'ru' | 'en'): string {
+  const safeErr = sanitizeErrorForLog(err);
+  const errLower = safeErr.toLowerCase();
+
+  if (errLower.includes('429') || errLower.includes('quota') || errLower.includes('resource_exhausted')) {
+    return detectedLang === 'ru'
+      ? 'Превышен лимит запросов к Gemini AI — использован локальный режим.'
+      : detectedLang === 'en'
+      ? 'Gemini AI rate limit reached — using local financial fallback.'
+      : 'Gemini AI soʻrovlar limiti vaqtincha toʻldi — lokal rejim orqali javob berildi.';
+  }
+  if (errLower.includes('timeout') || errLower.includes('gemini_timeout')) {
+    return detectedLang === 'ru'
+      ? 'Сервер Gemini отвечает слишком долго — использован локальный режим.'
+      : detectedLang === 'en'
+      ? 'Gemini response timed out — using local financial fallback.'
+      : 'Gemini javobi kechikkani sababli lokal tahlildan foydalanildi.';
+  }
+  if (errLower.includes('401') || errLower.includes('403') || errLower.includes('api_key') || errLower.includes('api key')) {
+    return detectedLang === 'ru'
+      ? 'Неверный или неактивный GEMINI_API_KEY на сервере — использован локальный режим.'
+      : detectedLang === 'en'
+      ? 'Invalid or unauthorized GEMINI_API_KEY on server — using local fallback.'
+      : 'Serverdagi GEMINI_API_KEY yaroqsiz yoki faol emas — lokal tahlil ishlamoqda.';
+  }
+  return detectedLang === 'ru'
+    ? 'Временная ошибка связи с Gemini AI — использован локальный режим.'
+    : detectedLang === 'en'
+    ? 'Temporary Gemini AI connection issue — using local fallback.'
+    : 'Gemini AI bilan aloqada vaqtincha uzilish — lokal rejimdan javob berildi.';
+}
+
+function buildSanitizedContents(history: GeminiHistoryItem[], message: string): Content[] {
+  const sanitizedHistory: Content[] = history
+    .slice(-8)
+    .filter((h) => h && typeof h.content === 'string' && h.content.trim().length > 0)
+    .map((h) => ({
+      role: h.role === 'user' ? 'user' : 'model',
+      parts: [{ text: h.content.trim().slice(0, 1200) }],
+    }));
+
+  const userTurn: Content = {
+    role: 'user',
+    parts: [{ text: message.trim().slice(0, 2000) }],
+  };
+
+  return [...sanitizedHistory, userTurn];
+}
+
 export async function runGeminiAssistantTurn(params: {
   user: UserProfile;
   message: string;
@@ -1003,22 +1112,7 @@ export async function runGeminiAssistantTurn(params: {
 
   const ctx = await buildUserFinancialContext(user.id);
   const systemInstruction = buildSystemInstruction(user, ctx);
-
-  // Build clean multi-turn contents (limit to recent 12 turns for speed & token efficiency)
-  const sanitizedHistory: Content[] = history
-    .slice(-12)
-    .filter((h) => h && typeof h.content === 'string' && h.content.trim().length > 0)
-    .map((h) => ({
-      role: h.role === 'user' ? 'user' : 'model',
-      parts: [{ text: h.content.trim().slice(0, 1800) }],
-    }));
-
-  const userTurn: Content = {
-    role: 'user',
-    parts: [{ text: message.trim().slice(0, 2000) }],
-  };
-
-  const contents: Content[] = [...sanitizedHistory, userTurn];
+  const contents = buildSanitizedContents(history, message);
 
   try {
     const response1 = await withTimeout(
@@ -1042,13 +1136,13 @@ export async function runGeminiAssistantTurn(params: {
       const callName = firstCall.name || '';
       const callArgs = (firstCall.args || {}) as Record<string, unknown>;
 
-      // Read-only reporting tool: execute immediately & run 2nd Gemini turn
+      // Read-only reporting tool: execute immediately from cached ctx & run 2nd Gemini turn
       if (callName === 'get_financial_report') {
         const rawPeriod = String(callArgs.period || 'month');
         const period: 'today' | 'week' | 'month' | 'year' =
           rawPeriod === 'today' || rawPeriod === 'week' || rawPeriod === 'year' ? rawPeriod : 'month';
         const focus = callArgs.focus ? String(callArgs.focus) : undefined;
-        const { structuredRows, reportData } = await buildReportForPeriod(user.id, period, focus, detectedLang);
+        const { structuredRows, reportData } = buildReportForPeriod(ctx, period, focus, detectedLang);
 
         const modelContent = response1.candidates?.[0]?.content;
         if (modelContent) {
@@ -1087,7 +1181,6 @@ export async function runGeminiAssistantTurn(params: {
           }
         }
 
-        // If 2nd turn returned empty text, synthesize concise summary
         return {
           reply:
             detectedLang === 'ru'
@@ -1128,48 +1221,217 @@ export async function runGeminiAssistantTurn(params: {
       source: 'gemini',
     };
   } catch (err: unknown) {
-    const safeErr = sanitizeErrorForLog(err);
-    console.error('[HISOBOT AI] Gemini assistant error:', safeErr);
-
-    const errLower = safeErr.toLowerCase();
-    let friendlyWarning = '';
-
-    if (errLower.includes('429') || errLower.includes('quota') || errLower.includes('resource_exhausted')) {
-      friendlyWarning =
-        detectedLang === 'ru'
-          ? 'Превышен лимит запросов к Gemini AI — использован локальный режим.'
-          : detectedLang === 'en'
-          ? 'Gemini AI rate limit reached — using local financial fallback.'
-          : 'Gemini AI soʻrovlar limiti vaqtincha toʻldi — lokal rejim orqali javob berildi.';
-    } else if (errLower.includes('timeout') || errLower.includes('gemini_timeout')) {
-      friendlyWarning =
-        detectedLang === 'ru'
-          ? 'Сервер Gemini отвечает слишком долго — использован локальный режим.'
-          : detectedLang === 'en'
-          ? 'Gemini response timed out — using local financial fallback.'
-          : 'Gemini javobi kechikkani sababli lokal tahlildan foydalanildi.';
-    } else if (errLower.includes('401') || errLower.includes('403') || errLower.includes('api_key') || errLower.includes('api key')) {
-      friendlyWarning =
-        detectedLang === 'ru'
-          ? 'Неверный или неактивный GEMINI_API_KEY на сервере — использован локальный режим.'
-          : detectedLang === 'en'
-          ? 'Invalid or unauthorized GEMINI_API_KEY on server — using local fallback.'
-          : 'Serverdagi GEMINI_API_KEY yaroqsiz yoki faol emas — lokal tahlil ishlamoqda.';
-    } else {
-      friendlyWarning =
-        detectedLang === 'ru'
-          ? 'Временная ошибка связи с Gemini AI — использован локальный режим.'
-          : detectedLang === 'en'
-          ? 'Temporary Gemini AI connection issue — using local fallback.'
-          : 'Gemini AI bilan aloqada vaqtincha uzilish — lokal rejimdan javob berildi.';
-    }
-
+    console.error('[HISOBOT AI] Gemini assistant error:', sanitizeErrorForLog(err));
     return runFallbackAssistantTurn({
       user,
       message,
       lang: detectedLang,
-      warning: friendlyWarning,
+      warning: buildFriendlyGeminiWarning(err, detectedLang),
     });
+  }
+}
+
+export async function streamGeminiAssistantTurn(
+  params: {
+    user: UserProfile;
+    message: string;
+    history?: GeminiHistoryItem[];
+    language?: string;
+    signal?: AbortSignal;
+  },
+  callbacks: {
+    onDelta: (chunk: string) => void;
+    onRows?: (rows: AssistantStructuredRow[]) => void;
+  }
+): Promise<AssistantTurnResult> {
+  const { user, message, history = [], language = 'uz', signal } = params;
+  const detectedLang = detectLanguage(message, language);
+  const client = getGeminiClient();
+
+  if (!client) {
+    const missingMsg =
+      detectedLang === 'ru'
+        ? 'GEMINI_API_KEY не задан на сервере — включён локальный резервный режим.'
+        : detectedLang === 'en'
+        ? 'GEMINI_API_KEY is not set on the server — local financial fallback is active.'
+        : 'GEMINI_API_KEY server muhitida sozlanmagan — lokal aqlli tahlil rejimi ishlamoqda.';
+
+    const fallback = await runFallbackAssistantTurn({
+      user,
+      message,
+      lang: detectedLang,
+      warning: missingMsg,
+    });
+    if (fallback.structuredRows) callbacks.onRows?.(fallback.structuredRows);
+    if (fallback.reply) callbacks.onDelta(fallback.reply);
+    return fallback;
+  }
+
+  const ctx = await buildUserFinancialContext(user.id);
+  const systemInstruction = buildSystemInstruction(user, ctx);
+  const contents = buildSanitizedContents(history, message);
+
+  let streamedText = '';
+
+  try {
+    const stream1 = await withTimeout(
+      client.models.generateContentStream({
+        model: GEMINI_MODEL,
+        contents,
+        config: {
+          systemInstruction,
+          thinkingConfig: {
+            thinkingLevel: ThinkingLevel.LOW,
+          },
+          tools: [{ functionDeclarations: assistantToolDeclarations }],
+        },
+      })
+    );
+
+    const collectedCalls: FunctionCall[] = [];
+    let modelContent: Content | undefined;
+
+    for await (const chunk of stream1) {
+      if (signal?.aborted) break;
+      if (chunk.functionCalls?.length) {
+        collectedCalls.push(...chunk.functionCalls);
+      }
+      if (!modelContent && chunk.candidates?.[0]?.content) {
+        modelContent = chunk.candidates[0].content;
+      } else if (modelContent && chunk.candidates?.[0]?.content?.parts?.length) {
+        modelContent = {
+          role: modelContent.role || 'model',
+          parts: [...(modelContent.parts || []), ...chunk.candidates[0].content.parts],
+        };
+      }
+      const delta = chunk.text;
+      if (delta) {
+        streamedText += delta;
+        callbacks.onDelta(delta);
+      }
+    }
+
+    if (collectedCalls.length > 0) {
+      const firstCall = collectedCalls[0];
+      const callName = firstCall.name || '';
+      const callArgs = (firstCall.args || {}) as Record<string, unknown>;
+
+      if (callName === 'get_financial_report') {
+        const rawPeriod = String(callArgs.period || 'month');
+        const period: 'today' | 'week' | 'month' | 'year' =
+          rawPeriod === 'today' || rawPeriod === 'week' || rawPeriod === 'year' ? rawPeriod : 'month';
+        const focus = callArgs.focus ? String(callArgs.focus) : undefined;
+        const { structuredRows, reportData } = buildReportForPeriod(ctx, period, focus, detectedLang);
+        callbacks.onRows?.(structuredRows);
+
+        if (modelContent) {
+          const functionResponsePart: Part = {
+            functionResponse: {
+              id: firstCall.id,
+              name: callName,
+              response: { report: reportData },
+            },
+          };
+
+          const stream2 = await withTimeout(
+            client.models.generateContentStream({
+              model: GEMINI_MODEL,
+              contents: [
+                ...contents,
+                modelContent,
+                { role: 'user', parts: [functionResponsePart] },
+              ],
+              config: {
+                systemInstruction,
+                thinkingConfig: {
+                  thinkingLevel: ThinkingLevel.LOW,
+                },
+              },
+            })
+          );
+
+          let turn2Text = '';
+          if (streamedText.trim()) {
+            callbacks.onDelta('\n');
+            streamedText += '\n';
+          }
+          for await (const chunk of stream2) {
+            if (signal?.aborted) break;
+            const delta = chunk.text;
+            if (delta) {
+              turn2Text += delta;
+              streamedText += delta;
+              callbacks.onDelta(delta);
+            }
+          }
+
+          if (turn2Text.trim() || streamedText.trim()) {
+            return {
+              reply: streamedText.trim(),
+              structuredRows,
+              source: 'gemini',
+            };
+          }
+        }
+
+        const fallbackReportReply =
+          detectedLang === 'ru'
+            ? 'Вот ваш актуальный финансовый отчёт за выбранный период:'
+            : detectedLang === 'en'
+            ? 'Here is your financial report for the requested period:'
+            : 'Tanlangan davr boʻyicha dolzarb moliyaviy hisobotingiz:';
+        if (!streamedText.trim()) {
+          callbacks.onDelta(fallbackReportReply);
+        }
+        return {
+          reply: streamedText.trim() || fallbackReportReply,
+          structuredRows,
+          source: 'gemini',
+        };
+      }
+
+      if (
+        callName === 'propose_transaction' ||
+        callName === 'propose_budget' ||
+        callName === 'propose_goal'
+      ) {
+        const proposedAction = sanitizeActionFromCall(callName, callArgs, ctx.categories);
+        if (proposedAction) {
+          const promptText = streamedText.trim() || buildConfirmationPrompt(proposedAction, detectedLang);
+          if (!streamedText.trim()) {
+            callbacks.onDelta(promptText);
+          }
+          return {
+            reply: promptText,
+            proposedAction,
+            source: 'gemini',
+          };
+        }
+      }
+    }
+
+    const finalReply = streamedText.trim();
+    if (!finalReply) {
+      throw new Error('EMPTY_GEMINI_RESPONSE');
+    }
+
+    return {
+      reply: finalReply,
+      source: 'gemini',
+    };
+  } catch (err: unknown) {
+    console.error('[HISOBOT AI] Gemini streaming error:', sanitizeErrorForLog(err));
+    const fallback = await runFallbackAssistantTurn({
+      user,
+      message,
+      lang: detectedLang,
+      warning: buildFriendlyGeminiWarning(err, detectedLang),
+    });
+    if (fallback.structuredRows) callbacks.onRows?.(fallback.structuredRows);
+    if (!streamedText.trim() && fallback.reply) {
+      callbacks.onDelta(fallback.reply);
+    }
+    return fallback;
   }
 }
 
@@ -1187,10 +1449,10 @@ export async function parseTransactionWithGemini(
   try {
     const response = await withTimeout(
       client.models.generateContent({
-        model: GEMINI_MODEL,
+        model: GEMINI_FAST_MODEL,
         contents: `Parse this personal finance message (${language}) into a single transaction. Today is ${today}. Available categories: ${catNames}.\nMessage: "${userInput.slice(0, 600)}"`,
         config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
           responseMimeType: 'application/json',
           responseSchema: {
             type: Type.OBJECT,
@@ -1207,7 +1469,7 @@ export async function parseTransactionWithGemini(
           },
         },
       }),
-      12_000
+      6_000
     );
 
     const raw = response.text?.trim();

@@ -172,6 +172,7 @@ export interface AIChatMessage {
   receiptSaved?: boolean;
   structuredRows?: { label: string; value: string; tone?: 'emerald' | 'rose' | 'teal' | 'amber' }[];
   isError?: boolean;
+  isStreaming?: boolean;
   retryQuery?: string;
   source?: 'gemini' | 'fallback';
 }

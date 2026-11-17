@@ -147,9 +147,11 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
     loadHealth();
   }, [loadHealth]);
 
+  const hasStreamingMessage = messages.some((m) => m.isStreaming);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, loading]);
+    messagesEndRef.current?.scrollIntoView({ behavior: hasStreamingMessage ? 'auto' : 'smooth' });
+  }, [messages, loading, hasStreamingMessage]);
 
   // Cleanup active TTS on unmount
   useEffect(() => {
@@ -220,6 +222,27 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
     [activeConv?.id]
   );
 
+  const upsertAssistantMessage = useCallback(
+    (assistantMsg: AIChatMessage) => {
+      setConversations((prev) =>
+        prev.map((conv) => {
+          if (conv.id !== activeConv?.id) return conv;
+          const exists = conv.messages.some((m) => m.id === assistantMsg.id);
+          const nextMessages = exists
+            ? conv.messages.map((m) => (m.id === assistantMsg.id ? { ...m, ...assistantMsg } : m))
+            : [...conv.messages, assistantMsg];
+          return {
+            ...conv,
+            preview: assistantMsg.content.replace(/\*\*/g, '').slice(0, 60) || conv.preview,
+            updatedAt: new Date().toISOString(),
+            messages: nextMessages,
+          };
+        })
+      );
+    },
+    [activeConv?.id]
+  );
+
   const executeAssistantTurn = useCallback(
     async (
       query: string,
@@ -231,8 +254,8 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
       stopSpeaking();
 
       const recentHistory = messages
-        .filter((m) => !m.isError && m.id !== 'welcome')
-        .slice(-12)
+        .filter((m) => !m.isError && !m.isStreaming && m.id !== 'welcome')
+        .slice(-8)
         .map((m) => ({ role: m.role, content: m.content }));
 
       const nowTime = new Date().toLocaleTimeString([], {
@@ -252,14 +275,47 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
       setLoading(true);
       setThinking();
 
+      const assistantId = `msg_a_${Date.now() + 1}`;
+      let streamedRows: AIChatMessage['structuredRows'] | undefined;
+      let streamedContent = '';
+      let hasInsertedStreamBubble = false;
+
       try {
-        const res = await api.askAIAssistant(
+        const res = await api.askAIAssistantStream(
           clean,
           recentHistory,
-          options?.languageHint || 'uz'
+          options?.languageHint || 'uz',
+          {
+            onDelta: (_chunk, accumulated) => {
+              streamedContent = accumulated;
+              hasInsertedStreamBubble = true;
+              upsertAssistantMessage({
+                id: assistantId,
+                role: 'assistant',
+                content: accumulated,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                structuredRows: streamedRows,
+                isStreaming: true,
+                source: 'gemini',
+              });
+            },
+            onRows: (rows) => {
+              streamedRows = rows;
+              if (hasInsertedStreamBubble || streamedContent) {
+                upsertAssistantMessage({
+                  id: assistantId,
+                  role: 'assistant',
+                  content: streamedContent,
+                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  structuredRows: rows,
+                  isStreaming: true,
+                  source: 'gemini',
+                });
+              }
+            },
+          }
         );
 
-        const assistantId = `msg_a_${Date.now()}`;
         const fullContent = res.warning
           ? `${res.reply}\n\n(${res.warning})`
           : res.reply;
@@ -269,13 +325,14 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
           role: 'assistant',
           content: fullContent,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          structuredRows: res.structuredRows,
+          structuredRows: res.structuredRows ?? streamedRows,
           proposedAction: res.proposedAction,
           confirmationState: res.proposedAction ? 'pending' : undefined,
           source: res.source,
+          isStreaming: false,
         };
 
-        appendMessagesToActive([assistantMsg]);
+        upsertAssistantMessage(assistantMsg);
 
         if ((options?.speakReply ?? autoSpeak) && ttsSupported) {
           speakText(res.reply, assistantId, options?.languageHint);
@@ -286,16 +343,17 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
         return assistantMsg;
       } catch (err: any) {
         const errMsg: AIChatMessage = {
-          id: `msg_err_${Date.now()}`,
+          id: hasInsertedStreamBubble ? assistantId : `msg_err_${Date.now()}`,
           role: 'assistant',
           content: `Soʻrovni qayta ishlashda xatolik yuz berdi: ${
             err?.message || 'Serverga ulanib boʻlmadi'
           }.`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           isError: true,
+          isStreaming: false,
           retryQuery: clean,
         };
-        appendMessagesToActive([errMsg]);
+        upsertAssistantMessage(errMsg);
         setError('Server bilan aloqada xatolik');
         throw err;
       } finally {
@@ -312,6 +370,7 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
       speakText,
       stopSpeaking,
       ttsSupported,
+      upsertAssistantMessage,
     ]
   );
 
@@ -370,7 +429,7 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
 
       toast.success('Muvaffaqiyatli saqlandi');
       onTransactionSaved((res.createdRecord || {}) as Transaction);
-      await loadHealth();
+      void loadHealth();
       setSuccess('Bazaga saqlandi!');
       return confirmedText;
     } catch (err: any) {
@@ -423,7 +482,7 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
 
       toast.success('Tranzaksiya bazaga saqlandi');
       onTransactionSaved(res.transaction);
-      await loadHealth();
+      void loadHealth();
       setSuccess('Tranzaksiya saqlandi!');
     } catch (err: any) {
       toast.error(err?.message || 'Tranzaksiyani saqlashda xatolik yuz berdi');
@@ -539,7 +598,7 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
       if (txRes.transactions[0]) {
         onTransactionSaved(txRes.transactions[0]);
       }
-      await loadHealth();
+      void loadHealth();
       setSuccess('Chek saqlandi!');
     } catch (err: any) {
       toast.error(err?.message || 'Chekni saqlashda xatolik');
@@ -783,7 +842,7 @@ export const AIAssistantPage: React.FC<AIAssistantPageProps> = ({
                   />
                 ))}
 
-                {loading && <TypingIndicator />}
+                {loading && !hasStreamingMessage && <TypingIndicator />}
                 <div ref={messagesEndRef} />
               </>
             )}

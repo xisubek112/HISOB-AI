@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from './context/AuthContext.tsx';
 import { Sidebar, NavTab } from './components/layout/Sidebar.tsx';
 import { Header, DashboardPeriod } from './components/layout/Header.tsx';
 import { MobileBottomNav } from './components/layout/MobileBottomNav.tsx';
+import { FloatingAIButton } from './components/ai/FloatingAIButton.tsx';
 import { DashboardView } from './components/views/DashboardView.tsx';
 import { IncomeView } from './components/views/IncomeView.tsx';
 import { ExpenseView } from './components/views/ExpenseView.tsx';
@@ -611,6 +612,16 @@ function MainApp() {
           </div>
         </main>
       </div>
+
+      {/* Floating AI Assistant Entry Button */}
+      {user && !appLocked && currentTab !== 'ai' && (
+        <FloatingAIButton
+          onClick={() => {
+            setQuickAddSheetOpen(false);
+            setCurrentTab('ai');
+          }}
+        />
+      )}
 
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav

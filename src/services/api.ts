@@ -373,6 +373,130 @@ class ApiService {
     });
   }
 
+  async askAIAssistantStream(
+    message: string,
+    history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+    language: string = 'uz',
+    callbacks?: {
+      onDelta?: (textChunk: string, accumulatedText: string) => void;
+      onRows?: (structuredRows: NonNullable<AIChatMessage['structuredRows']>) => void;
+    }
+  ): Promise<{
+    reply: string;
+    structuredRows?: AIChatMessage['structuredRows'];
+    proposedAction?: AIProposedAction;
+    source: 'gemini' | 'fallback';
+    warning?: string;
+  }> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    const currentToken = this.getToken();
+    if (currentToken) {
+      headers['Authorization'] = `Bearer ${currentToken}`;
+    }
+
+    const res = await fetch('/api/ai/assistant/stream', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ message, history, language }),
+    });
+
+    if (!res.ok) {
+      let errorMsg = `Server xatosi: ${res.status}`;
+      try {
+        const data = await res.json();
+        if (data.error) errorMsg = data.error;
+      } catch {
+        // ignore
+      }
+      throw new Error(errorMsg);
+    }
+
+    if (!res.body) {
+      return this.askAIAssistant(message, history, language);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let accumulatedText = '';
+    let latestRows: AIChatMessage['structuredRows'] | undefined;
+    let finalResult: {
+      reply: string;
+      structuredRows?: AIChatMessage['structuredRows'];
+      proposedAction?: AIProposedAction;
+      source: 'gemini' | 'fallback';
+      warning?: string;
+    } | null = null;
+
+    const processFrame = (rawFrame: string) => {
+      const normalized = rawFrame.replace(/\r\n/g, '\n').trim();
+      if (!normalized) return;
+
+      let eventType = 'message';
+      const dataLines: string[] = [];
+
+      for (const line of normalized.split('\n')) {
+        if (line.startsWith('event:')) {
+          eventType = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          dataLines.push(line.slice(5).trim());
+        }
+      }
+
+      if (dataLines.length === 0) return;
+      const payload = JSON.parse(dataLines.join('\n')) as Record<string, any>;
+
+      if (eventType === 'delta' && typeof payload.text === 'string') {
+        accumulatedText += payload.text;
+        callbacks?.onDelta?.(payload.text, accumulatedText);
+      } else if (eventType === 'rows' && Array.isArray(payload.structuredRows)) {
+        latestRows = payload.structuredRows;
+        callbacks?.onRows?.(payload.structuredRows);
+      } else if (eventType === 'done') {
+        finalResult = {
+          reply: typeof payload.reply === 'string' ? payload.reply : accumulatedText,
+          structuredRows: payload.structuredRows ?? latestRows,
+          proposedAction: payload.proposedAction,
+          source: payload.source === 'fallback' ? 'fallback' : 'gemini',
+          warning: payload.warning,
+        };
+      } else if (eventType === 'error') {
+        throw new Error(payload.error || 'AI javob bera olmadi');
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let separatorIdx = buffer.search(/\r?\n\r?\n/);
+      while (separatorIdx !== -1) {
+        const frame = buffer.slice(0, separatorIdx);
+        const match = buffer.slice(separatorIdx).match(/^\r?\n\r?\n/);
+        buffer = buffer.slice(separatorIdx + (match ? match[0].length : 2));
+        processFrame(frame);
+        separatorIdx = buffer.search(/\r?\n\r?\n/);
+      }
+    }
+
+    if (buffer.trim()) {
+      processFrame(buffer);
+    }
+
+    if (finalResult) {
+      return finalResult;
+    }
+
+    return {
+      reply: accumulatedText.trim() || 'Javob tayyor.',
+      structuredRows: latestRows,
+      source: 'gemini',
+    };
+  }
+
   async executeAIAction(action: AIProposedAction): Promise<{
     success: boolean;
     actionType: AIProposedAction['actionType'];
